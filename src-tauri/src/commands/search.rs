@@ -1,7 +1,10 @@
 // ContextPaste — Search IPC Commands
 
+use std::sync::Arc;
+
 use tauri::State;
 
+use crate::ai::semantic_search::SemanticSearchEngine;
 use crate::storage::database::DbPool;
 use crate::storage::models::ClipItem;
 use crate::storage::queries;
@@ -18,13 +21,22 @@ pub fn search_items(
     queries::search_items(&db, &query, limit)
 }
 
-/// Semantic search — Phase 3 stub.
 #[tauri::command]
 pub fn semantic_search(
-    _db: State<'_, DbPool>,
-    _query: String,
-    _limit: u32,
+    db: State<'_, DbPool>,
+    semantic: State<'_, Arc<SemanticSearchEngine>>,
+    query: String,
+    limit: u32,
 ) -> Result<Vec<ClipItem>, String> {
-    // Phase 3: Implement ONNX embedding + sqlite-vec similarity search
-    Ok(Vec::new())
+    if query.trim().is_empty() {
+        return queries::get_recent_items(&db, limit, 0);
+    }
+
+    if !semantic.is_ready() {
+        // Fall back to FTS search if AI not ready
+        return queries::search_items(&db, &query, limit);
+    }
+
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+    semantic.search(&conn, &query, limit)
 }

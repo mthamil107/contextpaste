@@ -27,8 +27,9 @@ Thumbs.db
 .env.local
 .env.*.local
 
-# ONNX models (downloaded separately)
+# ONNX models and tokenizers (downloaded separately)
 src-tauri/models/*.onnx
+src-tauri/models/*.json
 
 # Build outputs
 *.msi

@@ -196,14 +196,88 @@ test.describe("Settings Panel", () => {
     await expect(select).toBeVisible();
 
     const options = select.locator("option");
-    await expect(options).toHaveCount(4);
+    await expect(options).toHaveCount(3);
     await expect(options.nth(0)).toHaveText("Local (ONNX)");
     await expect(options.nth(1)).toHaveText("OpenAI");
-    await expect(options.nth(2)).toHaveText("Anthropic");
-    await expect(options.nth(3)).toHaveText("Ollama");
+    await expect(options.nth(2)).toHaveText("Ollama");
   });
 
-  test("AI: semantic search checkbox exists and is disabled", async ({
+  test("AI: selecting OpenAI shows API key field", async ({ page }) => {
+    await page.locator("[data-testid='settings-tab-ai']").click();
+
+    const select = page.locator("[data-testid='setting-ai-provider']");
+    await select.selectOption("openai");
+
+    const apiKeyInput = page.locator("[data-testid='setting-ai-api-key']");
+    await expect(apiKeyInput).toBeVisible();
+  });
+
+  test("AI: selecting Ollama shows base URL field", async ({ page }) => {
+    await page.locator("[data-testid='settings-tab-ai']").click();
+
+    const select = page.locator("[data-testid='setting-ai-provider']");
+    await select.selectOption("ollama");
+
+    const baseUrlInput = page.locator("[data-testid='setting-ai-base-url']");
+    await expect(baseUrlInput).toBeVisible();
+  });
+
+  test("AI: selecting Local hides API key field", async ({ page }) => {
+    await page.locator("[data-testid='settings-tab-ai']").click();
+
+    const select = page.locator("[data-testid='setting-ai-provider']");
+    // First select a non-local provider to ensure the field appears
+    await select.selectOption("openai");
+    await expect(
+      page.locator("[data-testid='setting-ai-api-key']"),
+    ).toBeVisible();
+
+    // Switch back to local
+    await select.selectOption("local");
+    await expect(
+      page.locator("[data-testid='setting-ai-api-key']"),
+    ).not.toBeVisible();
+  });
+
+  test("AI: switching back to Local hides API key field", async ({ page }) => {
+    await page.locator("[data-testid='settings-tab-ai']").click();
+
+    const select = page.locator("[data-testid='setting-ai-provider']");
+
+    // Select Ollama first
+    await select.selectOption("ollama");
+    await expect(
+      page.locator("[data-testid='setting-ai-api-key']"),
+    ).toBeVisible();
+    await expect(
+      page.locator("[data-testid='setting-ai-base-url']"),
+    ).toBeVisible();
+
+    // Switch to Local
+    await select.selectOption("local");
+    await expect(
+      page.locator("[data-testid='setting-ai-api-key']"),
+    ).not.toBeVisible();
+    await expect(
+      page.locator("[data-testid='setting-ai-base-url']"),
+    ).not.toBeVisible();
+  });
+
+  test("AI: non-local provider shows Save & Test Connection button", async ({
+    page,
+  }) => {
+    await page.locator("[data-testid='settings-tab-ai']").click();
+
+    const select = page.locator("[data-testid='setting-ai-provider']");
+    await select.selectOption("openai");
+
+    const testButton = page.locator(
+      "[data-testid='btn-test-ai-connection']",
+    );
+    await expect(testButton).toBeVisible();
+  });
+
+  test("AI: semantic search checkbox exists and is clickable", async ({
     page,
   }) => {
     await page.locator("[data-testid='settings-tab-ai']").click();
@@ -212,6 +286,19 @@ test.describe("Settings Panel", () => {
       "[data-testid='setting-enable-semantic-search']",
     );
     await expect(checkbox).toBeVisible();
-    await expect(checkbox).toBeDisabled();
+    await expect(checkbox).toBeEnabled();
+
+    const initialState = await checkbox.isChecked();
+    await checkbox.click();
+    const newState = await checkbox.isChecked();
+    expect(newState).toBe(!initialState);
+  });
+
+  test("AI: Re-index All Items button exists", async ({ page }) => {
+    await page.locator("[data-testid='settings-tab-ai']").click();
+
+    const button = page.locator("[data-testid='btn-backfill-embeddings']");
+    await expect(button).toBeVisible();
+    await expect(button).toHaveText(/Re-index All Items/);
   });
 });

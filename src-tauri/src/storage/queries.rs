@@ -1,6 +1,6 @@
 // ContextPaste — SQL Query Functions
 
-use rusqlite::params;
+use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
 
 use super::database::DbPool;
@@ -518,6 +518,146 @@ pub fn get_chain_by_hash(db: &DbPool, hash: &str) -> Result<Option<WorkflowChain
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
         Err(e) => Err(format!("Chain lookup failed: {}", e)),
     }
+}
+
+// --- AI Embedding Queries (Phase 3) ---
+
+/// Store an embedding for a clip item.
+pub fn store_embedding(
+    conn: &Connection,
+    item_id: &str,
+    embedding: &[f32],
+    model_name: &str,
+    dimension: usize,
+) -> Result<(), String> {
+    let blob: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
+    conn.execute(
+        "INSERT OR REPLACE INTO clip_embeddings (item_id, embedding, model_name, dimension) VALUES (?1, ?2, ?3, ?4)",
+        params![item_id, blob, model_name, dimension as i64],
+    )
+    .map_err(|e| format!("Failed to store embedding: {}", e))?;
+    Ok(())
+}
+
+/// Delete embedding for an item.
+pub fn delete_embedding(conn: &Connection, item_id: &str) -> Result<(), String> {
+    conn.execute(
+        "DELETE FROM clip_embeddings WHERE item_id = ?1",
+        params![item_id],
+    )
+    .map_err(|e| format!("Failed to delete embedding: {}", e))?;
+    Ok(())
+}
+
+/// Get all embeddings for cosine similarity search.
+/// Returns (item_id, embedding_blob) pairs.
+pub fn get_all_embeddings(conn: &Connection) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let mut stmt = conn
+        .prepare("SELECT item_id, embedding FROM clip_embeddings")
+        .map_err(|e| format!("Failed to prepare embeddings query: {}", e))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })
+        .map_err(|e| format!("Failed to query embeddings: {}", e))?;
+    let mut results = Vec::new();
+    for row in rows {
+        results.push(row.map_err(|e| format!("Failed to read embedding row: {}", e))?);
+    }
+    Ok(results)
+}
+
+/// Get count of embedded items.
+pub fn get_embedding_count(conn: &Connection) -> Result<i64, String> {
+    conn.query_row("SELECT COUNT(*) FROM clip_embeddings", [], |row| row.get(0))
+        .map_err(|e| format!("Failed to count embeddings: {}", e))
+}
+
+/// Get items that don't have embeddings yet (for backfill).
+/// Excludes credentials — they must NEVER be embedded.
+pub fn get_unembedded_items(conn: &Connection, limit: u32) -> Result<Vec<ClipItem>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT i.id, i.content, i.content_type, i.content_hash, i.content_length,
+             i.is_credential, i.credential_type, i.source_app, i.source_window_title,
+             i.is_pinned, i.is_starred, i.expires_at, i.created_at, i.last_pasted_at,
+             i.paste_count, i.tags
+             FROM clip_items i
+             LEFT JOIN clip_embeddings e ON i.id = e.item_id
+             WHERE e.item_id IS NULL AND i.is_credential = 0
+             ORDER BY i.created_at DESC
+             LIMIT ?1",
+        )
+        .map_err(|e| format!("Failed to prepare unembedded items query: {}", e))?;
+
+    let items = stmt
+        .query_map(params![limit], row_to_clip_item)
+        .map_err(|e| format!("Failed to query unembedded items: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(items)
+}
+
+/// Get a single item by ID using a raw connection (for use in AI module).
+pub fn get_item_by_conn(conn: &Connection, id: &str) -> Result<ClipItem, String> {
+    conn.query_row(
+        "SELECT id, content, content_type, content_hash, content_length,
+         is_credential, credential_type, source_app, source_window_title,
+         is_pinned, is_starred, expires_at, created_at, last_pasted_at, paste_count, tags
+         FROM clip_items WHERE id = ?1",
+        params![id],
+        row_to_clip_item,
+    )
+    .map_err(|e| format!("Item not found: {}", e))
+}
+
+/// Store/update AI API key.
+pub fn store_api_key(
+    conn: &Connection,
+    provider: &str,
+    api_key: &str,
+    base_url: Option<&str>,
+    model_name: Option<&str>,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR REPLACE INTO ai_api_keys (provider, api_key_encrypted, base_url, model_name, updated_at)
+         VALUES (?1, ?2, ?3, ?4, datetime('now'))",
+        params![provider, api_key, base_url, model_name],
+    )
+    .map_err(|e| format!("Failed to store API key: {}", e))?;
+    Ok(())
+}
+
+/// Get AI API key for a provider.
+/// Returns (api_key, base_url, model_name) if found.
+pub fn get_api_key(
+    conn: &Connection,
+    provider: &str,
+) -> Result<Option<(String, Option<String>, Option<String>)>, String> {
+    let result = conn.query_row(
+        "SELECT api_key_encrypted, base_url, model_name FROM ai_api_keys WHERE provider = ?1",
+        params![provider],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        },
+    );
+    match result {
+        Ok(r) => Ok(Some(r)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(format!("Failed to get API key: {}", e)),
+    }
+}
+
+/// Clear all embeddings (for re-indexing after provider switch).
+pub fn clear_all_embeddings(conn: &Connection) -> Result<(), String> {
+    conn.execute("DELETE FROM clip_embeddings", [])
+        .map_err(|e| format!("Failed to clear embeddings: {}", e))?;
+    Ok(())
 }
 
 // --- Row mapper ---

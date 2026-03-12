@@ -8,6 +8,7 @@ use std::time::Duration;
 use arboard::Clipboard;
 use tauri::{AppHandle, Emitter};
 
+use crate::ai::semantic_search::SemanticSearchEngine;
 use crate::clipboard::classifier;
 use crate::clipboard::credential_detector;
 use crate::prediction::workflow;
@@ -16,7 +17,11 @@ use crate::storage::models::ClipItem;
 use crate::storage::queries;
 
 /// Start the clipboard monitoring loop in a background thread.
-pub fn start_monitoring(app_handle: AppHandle, db: DbPool) {
+pub fn start_monitoring(
+    app_handle: AppHandle,
+    db: DbPool,
+    semantic_engine: Arc<SemanticSearchEngine>,
+) {
     std::thread::spawn(move || {
         let clipboard = Arc::new(Mutex::new(
             Clipboard::new().expect("Failed to access clipboard"),
@@ -139,6 +144,23 @@ pub fn start_monitoring(app_handle: AppHandle, db: DbPool) {
                 if let Err(e) = app_handle.emit("workflow:chain-detected", payload) {
                     log::error!("Failed to emit workflow chain event: {}", e);
                 }
+            }
+
+            // Phase 3: Generate embedding asynchronously
+            if !item.is_credential {
+                let embed_db = db.clone();
+                let embed_semantic = semantic_engine.clone();
+                let item_id = item.id.clone();
+                let content = item.content.clone();
+                std::thread::spawn(move || {
+                    if let Ok(conn) = embed_db.lock() {
+                        if let Err(e) =
+                            embed_semantic.index_item(&conn, &item_id, &content, false)
+                        {
+                            log::debug!("Embedding skipped for {}: {}", item_id, e);
+                        }
+                    }
+                });
             }
 
             // Enforce history limit

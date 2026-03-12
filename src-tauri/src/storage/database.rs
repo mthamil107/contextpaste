@@ -175,6 +175,24 @@ const MIGRATIONS: &[&str] = &[
         value TEXT NOT NULL,
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );",
+    // v2: AI embeddings (Phase 3)
+    "CREATE TABLE IF NOT EXISTS clip_embeddings (
+        item_id TEXT PRIMARY KEY REFERENCES clip_items(id) ON DELETE CASCADE,
+        embedding BLOB NOT NULL,
+        model_name TEXT NOT NULL DEFAULT 'all-MiniLM-L6-v2',
+        dimension INTEGER NOT NULL DEFAULT 384,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_embeddings_model ON clip_embeddings(model_name);
+
+    CREATE TABLE IF NOT EXISTS ai_api_keys (
+        provider TEXT PRIMARY KEY,
+        api_key_encrypted TEXT NOT NULL,
+        base_url TEXT,
+        model_name TEXT,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );",
 ];
 
 #[cfg(test)]

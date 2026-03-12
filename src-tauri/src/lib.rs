@@ -1,6 +1,7 @@
 // ContextPaste — Tauri application setup
 // All modules and command registration happens here
 
+mod ai;
 mod clipboard;
 mod commands;
 mod prediction;
@@ -8,8 +9,13 @@ mod storage;
 mod tray;
 mod utils;
 
+use std::sync::{Arc, Mutex};
+
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+
+use ai::embeddings::EmbeddingEngine;
+use ai::semantic_search::SemanticSearchEngine;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -49,6 +55,11 @@ pub fn run() {
             // Prediction commands
             commands::prediction::get_predictions,
             commands::prediction::get_workflow_chains,
+            // AI commands
+            commands::ai::configure_ai_provider,
+            commands::ai::test_ai_connection,
+            commands::ai::get_ai_status,
+            commands::ai::backfill_embeddings,
         ])
         .setup(|app| {
             // Initialize database
@@ -57,6 +68,13 @@ pub fn run() {
 
             // Store DB pool in app state for Tauri commands
             app.manage(db.clone());
+
+            // Initialize AI engines (Phase 3)
+            let embedding_engine = Arc::new(Mutex::new(EmbeddingEngine::new()));
+            let semantic_engine = Arc::new(SemanticSearchEngine::new(embedding_engine.clone()));
+
+            app.manage(embedding_engine);
+            app.manage(semantic_engine.clone());
 
             // Setup system tray
             if let Err(e) = tray::menu::setup_tray(app) {
@@ -109,7 +127,7 @@ pub fn run() {
 
             // Start clipboard monitoring
             let app_handle = app.handle().clone();
-            clipboard::monitor::start_monitoring(app_handle, db.clone());
+            clipboard::monitor::start_monitoring(app_handle, db.clone(), semantic_engine);
 
             // Spawn credential auto-expiry background timer
             {

@@ -4,7 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { ClipItem, RankedItem, WorkflowChain } from "./types";
+import type { AiStatus, ClipItem, RankedItem, WorkflowChain } from "./types";
 
 // ============================================================
 // Clipboard Commands
@@ -104,6 +104,31 @@ export async function addIgnoredApp(appName: string): Promise<void> {
 
 export async function removeIgnoredApp(appName: string): Promise<void> {
   return invoke<void>("remove_ignored_app", { appName });
+}
+
+// ============================================================
+// AI Commands
+// ============================================================
+
+export async function configureAiProvider(
+  provider: string,
+  apiKey?: string,
+  baseUrl?: string,
+  modelName?: string,
+): Promise<void> {
+  return invoke<void>("configure_ai_provider", { provider, apiKey, baseUrl, modelName });
+}
+
+export async function testAiConnection(): Promise<string> {
+  return invoke<string>("test_ai_connection");
+}
+
+export async function getAiStatus(): Promise<AiStatus> {
+  return invoke<AiStatus>("get_ai_status");
+}
+
+export async function backfillEmbeddings(): Promise<number> {
+  return invoke<number>("backfill_embeddings");
 }
 
 // ============================================================

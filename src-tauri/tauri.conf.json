@@ -34,6 +34,10 @@
     }
   },
   "bundle": {
+    "resources": [
+      "models/all-MiniLM-L6-v2.onnx",
+      "models/tokenizer.json"
+    ],
     "active": true,
     "targets": "all",
     "icon": [

@@ -25,7 +25,7 @@ export function QuickPasteOverlay() {
     activeChain,
     setActiveChain,
   } = useUIStore();
-  const { query, setQuery, results, searching } = useSearch();
+  const { query, setQuery, results, searching, isSemanticActive } = useSearch();
 
   // Ghost paste flash state: holds the id of the item being flashed
   const [flashId, setFlashId] = useState<string | null>(null);
@@ -94,7 +94,7 @@ export function QuickPasteOverlay() {
         data-testid="quick-paste-overlay"
         onClick={(e) => e.stopPropagation()}
       >
-        <SearchBar value={query} onChange={setQuery} />
+        <SearchBar value={query} onChange={setQuery} isSemanticActive={isSemanticActive} />
 
         {/* Chain indicator */}
         {activeChain && <ChainIndicator chain={activeChain} />}

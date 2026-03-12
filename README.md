@@ -112,6 +112,21 @@ The prediction engine learns from your habits:
 - **Recency decay** — Recent copies score higher, with exponential decay (half-life: ~1 hour)
 - **Frequency** — Items you paste often get a persistent boost
 
+### Semantic Search
+
+Search your clipboard history by meaning instead of exact text. Enable in **Settings > AI**.
+
+- **Local mode** (default) — Works offline with the bundled ONNX model. No setup required.
+- **OpenAI mode** — Enter your API key in Settings > AI. Uses `text-embedding-3-small` for higher-dimensional embeddings.
+- **Ollama mode** — Install [Ollama](https://ollama.ai), run `ollama pull nomic-embed-text`, then select Ollama in Settings > AI. Runs entirely on your machine.
+
+**Re-indexing**: If you enable semantic search after already having clipboard history, click "Re-index All Items" in Settings > AI to generate embeddings for all existing items.
+
+**Search naturally**: Instead of remembering exact text, try queries like:
+- "that postgres connection string" instead of `postgres://`
+- "the AWS key I copied this morning" instead of `AKIA...`
+- "docker command to restart services" instead of `docker compose restart`
+
 ### Settings
 
 Access via system tray > Settings, or click "Settings" in the nav bar:
@@ -279,6 +294,36 @@ score = pin_boost * 100           // Pinned items always on top
 
 ---
 
+### Phase 3 — AI
+
+#### Local AI Embeddings (ONNX Runtime)
+- **Bundled model** — Ships with `all-MiniLM-L6-v2` ONNX model, no download or setup required
+- **384-dimensional embeddings** — Each clipboard item is converted to a semantic vector for meaning-based search
+- **~15ms per item** — Fast enough to embed every copy without noticeable delay
+- **Fully offline** — No internet connection needed in local mode
+
+#### Semantic Search
+- **Search by meaning, not just keywords** — Type "that email address from yesterday" instead of remembering exact text
+- **Cosine similarity ranking** — Results scored by how semantically close they are to your query
+- **Credential-safe** — Credentials are never embedded or included in the vector index
+
+#### Hybrid Search
+- **Automatic mode selection** — Short exact queries use FTS5 full-text search; natural language queries use semantic search
+- **Best of both worlds** — Exact text matching when you know the content, AI-powered search when you don't
+- **Seamless UX** — Works through the same search bar in Quick Paste overlay and History browser
+
+#### BYOK (Bring Your Own Key) Embedding Providers
+- **Local (default)** — Built-in ONNX model, 384D embeddings, no API key needed
+- **OpenAI** — Uses `text-embedding-3-small`, 1536D embeddings, requires API key
+- **Ollama** — Uses `nomic-embed-text`, 768D embeddings, runs locally via Ollama server
+
+#### Background Embedding Pipeline
+- **Async on copy** — Embeddings are generated asynchronously after each clipboard capture, never blocking the copy hot path
+- **Non-blocking architecture** — The clipboard monitor captures content instantly; embedding happens in a background task
+- **Re-index support** — "Re-index All Items" button in Settings to backfill embeddings for existing history
+
+---
+
 ## Keyboard Shortcuts
 
 | Action | Windows/Linux | macOS |
@@ -357,7 +402,7 @@ Covers: app launch, navigation, theme toggle, Quick Paste overlay, History panel
 - **Frontend**: React 18 + TypeScript + Tailwind CSS + Zustand
 - **Database**: SQLite (WAL mode) + FTS5 full-text search
 - **UI Library**: cmdk pattern + Lucide icons
-- **AI** (Phase 3): ONNX Runtime + sqlite-vec
+- **AI**: ONNX Runtime (all-MiniLM-L6-v2) + cosine similarity search
 - **Installer size**: ~10MB (vs 100MB+ for Electron apps)
 - **Memory usage**: ~50MB (vs 200MB+ for Electron apps)
 
@@ -375,12 +420,18 @@ TAURI SHELL (Rust)
 ├── SQLite Store (WAL, FTS5, migrations)
 ├── Global Shortcut Handler (Ctrl+Shift+V/H)
 ├── Credential Auto-Expiry Timer (60s interval)
+├── AI Embedding Pipeline
+│   ├── ONNX Runtime (all-MiniLM-L6-v2, local)
+│   ├── OpenAI API Client (text-embedding-3-small, BYOK)
+│   ├── Ollama Client (nomic-embed-text, local server)
+│   ├── Async Embedding on Copy (non-blocking background task)
+│   └── Cosine Similarity Search (in-Rust vector scoring)
 └── System Tray
 
 REACT FRONTEND (WebView via IPC)
 ├── Quick Paste Overlay (420px, keyboard nav)
 ├── History Browser (search + filters + detail)
-├── Settings Panel (4 tabs)
+├── Settings Panel (4 tabs, incl. AI provider config)
 ├── Zustand Stores (clipboard, settings, UI)
 └── Tauri IPC Wrappers (typed, centralized)
 ```
@@ -391,7 +442,7 @@ REACT FRONTEND (WebView via IPC)
 
 - [x] **Phase 1** — Core MVP (clipboard, classification, credentials, storage, UI)
 - [x] **Phase 2** — Intelligence (predictions, paste tracking, workflow chains, ghost paste)
-- [ ] **Phase 3** — AI (ONNX embeddings, sqlite-vec, semantic search, BYOK)
+- [x] **Phase 3** — AI (ONNX embeddings, semantic search, BYOK, hybrid search)
 - [ ] **Phase 4** — Launch (CI/CD, auto-updater, performance optimization)
 
 ---
@@ -400,13 +451,35 @@ REACT FRONTEND (WebView via IPC)
 
 ContextPaste works fully **without any AI setup or API key**. The built-in local ONNX model (all-MiniLM-L6-v2) ships with the app and handles semantic search for free.
 
-For enhanced AI features, you can optionally use your own API key — we never charge for AI, you pay your provider directly:
+For enhanced AI features, you can optionally use your own API key — we never charge for AI, you pay your provider directly.
 
-**Settings > AI > Provider:**
-- **Local** (default) — Free, built-in ONNX model, no internet needed, no key required
-- **OpenAI** — `text-embedding-3-small` — bring your own OpenAI API key
-- **Anthropic** — Claude for semantic parsing — bring your own Anthropic API key
-- **Ollama** — Free, local LLM server (`nomic-embed-text`) — no key needed
+### Provider Setup
+
+#### Local (Default)
+No setup needed. The ONNX model ships with the app.
+- **Model**: all-MiniLM-L6-v2
+- **Embedding dimensions**: 384
+- **Speed**: ~15ms per item
+- **Requirements**: None (works offline)
+
+#### OpenAI
+1. Get an API key from [platform.openai.com](https://platform.openai.com)
+2. Open **Settings > AI** and select "OpenAI" as the provider
+3. Enter your API key in the field that appears
+- **Model**: text-embedding-3-small
+- **Embedding dimensions**: 1536
+- **Requirements**: Internet connection, valid API key
+- **Cost**: Per OpenAI pricing (~$0.02 per 1M tokens)
+
+#### Ollama
+1. Install [Ollama](https://ollama.ai) for your platform
+2. Pull the embedding model: `ollama pull nomic-embed-text`
+3. Make sure Ollama is running (`ollama serve`)
+4. Open **Settings > AI** and select "Ollama" as the provider
+- **Model**: nomic-embed-text
+- **Embedding dimensions**: 768
+- **Requirements**: Ollama running locally (default: `http://localhost:11434`)
+- **Cost**: Free (runs on your hardware)
 
 Your API key is stored locally and encrypted. It is never sent anywhere except directly to the provider you configure. ContextPaste has zero telemetry and zero cloud services.
 

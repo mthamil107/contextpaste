@@ -84,6 +84,15 @@ export interface AppSettings {
   dedupWindowSeconds: number;
 }
 
+export interface AiStatus {
+  ready: boolean;
+  provider: string;
+  modelName: string;
+  embeddedCount: number;
+  totalItems: number;
+  dimension: number;
+}
+
 // Content type display configuration
 export const CONTENT_TYPE_CONFIG: Record<
   ContentType,
