@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ContextPaste Theme Variables */
+:root {
+  --cp-bg: #ffffff;
+  --cp-surface: #f8fafc;
+  --cp-border: #e2e8f0;
+  --cp-text: #0f172a;
+  --cp-muted: #64748b;
+  --cp-accent: #2563eb;
+}
+
+.dark {
+  --cp-bg: #0f172a;
+  --cp-surface: #1e293b;
+  --cp-border: #334155;
+  --cp-text: #f1f5f9;
+  --cp-muted: #94a3b8;
+  --cp-accent: #3b82f6;
+}
+
+/* Transparent window support for Tauri */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--cp-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--cp-muted);
+}

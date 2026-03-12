@@ -1,0 +1,46 @@
+# Rust
+/target/
+src-tauri/target/
+**/*.rs.bk
+Cargo.lock
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Tauri
+src-tauri/WixTools/
+src-tauri/target/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# ONNX models (downloaded separately)
+src-tauri/models/*.onnx
+
+# Build outputs
+*.msi
+*.dmg
+*.deb
+*.AppImage
+*.exe
+!src-tauri/icons/**
+
+# Test coverage
+coverage/
+*.lcov
+
+# Logs
+*.log
