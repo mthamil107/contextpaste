@@ -365,20 +365,154 @@ cargo tauri build    # Production build
 
 ## Testing
 
-### Rust Tests (56 tests)
+ContextPaste has **112 tests** across three layers: 56 Rust unit tests, 56 Playwright E2E tests, and TypeScript type checking.
+
+### Prerequisites
+
+```bash
+# Install dependencies
+pnpm install
+
+# Install Playwright browsers (first time only)
+npx playwright install chromium
+
+# Download ONNX model (for AI tests)
+bash scripts/download-model.sh
+```
+
+### Quick Test Commands
+
+```bash
+# Run everything
+cd src-tauri && cargo test && cd .. && pnpm tsc --noEmit && pnpm test:e2e
+
+# Individual test layers
+cargo test                    # Rust unit tests (56 tests, ~0.1s)
+pnpm tsc --noEmit             # TypeScript type check
+pnpm test:e2e                 # Playwright E2E tests (56 tests, ~30s)
+```
+
+---
+
+### Rust Unit Tests (56 tests)
 
 ```bash
 cd src-tauri
 cargo test
 ```
 
-Test coverage:
-- **Classifier** — 14 tests covering all 15 content types
-- **Credential detector** — 11 tests for each pattern + masking
-- **Prediction engine** — 8 tests (pin, recency, frequency, type match, source affinity, full ranking, no-context fallback)
-- **Workflow chains** — 7 tests (track, detect, hash, store, upsert, ordering, source matching)
-- **Database** — 2 tests (init, migrations idempotency)
-- **Queries** — 14 tests (CRUD, settings, dedup, paste history, prediction stats, source affinity)
+All Rust tests use in-memory SQLite databases (`init_test_db()`) — no files or cleanup needed.
+
+#### Content Classifier (`clipboard/classifier.rs`) — 14 tests
+
+| Test | What It Verifies |
+|------|-----------------|
+| `test_url` | Detects `http://`, `https://`, `www.` URLs |
+| `test_email` | Detects standard email addresses |
+| `test_ip` | Detects IPv4 addresses like `192.168.1.1` |
+| `test_json` | Detects valid JSON starting with `{` or `[` |
+| `test_yaml` | Detects YAML with `---` or `key: value` patterns |
+| `test_sql` | Detects SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, DROP |
+| `test_shell` | Detects commands starting with `git`, `docker`, `npm`, `curl`, etc. |
+| `test_code` | Detects `function`, `class`, `import`, `const`, `=>`, `pub fn` |
+| `test_aws_arn` | Detects `arn:aws:` prefixed ARNs |
+| `test_connection_string` | Detects `postgres://`, `redis://`, `mongodb://` URIs |
+| `test_filepath` | Detects Unix `/path/to/file` and Windows `C:\path` |
+| `test_markdown` | Detects `# heading`, `**bold**`, `[link](url)` |
+| `test_html` | Detects `<tag>...</tag>` patterns |
+| `test_plain_text` | Falls back to PlainText for unrecognized content |
+
+```bash
+cargo test classifier::tests     # Run classifier tests only
+```
+
+#### Credential Detector (`clipboard/credential_detector.rs`) — 11 tests
+
+| Test | What It Verifies |
+|------|-----------------|
+| `test_aws_access_key` | Detects `AKIA[0-9A-Z]{16}` |
+| `test_github_token` | Detects `ghp_` and `ghs_` tokens |
+| `test_gitlab_token` | Detects `glpat-` tokens |
+| `test_anthropic_key` | Detects `sk-ant-` API keys |
+| `test_openai_key` | Detects `sk-` OpenAI keys (48+ chars) |
+| `test_jwt` | Detects `eyJ...` three-segment JWT tokens |
+| `test_private_key` | Detects `-----BEGIN PRIVATE KEY-----` |
+| `test_connection_with_password` | Detects `://user:pass@host` patterns |
+| `test_generic_api_key` | Detects 32+ char strings near `api_key`, `token`, etc. |
+| `test_no_credential` | Verifies normal text doesn't false-positive |
+| `test_mask` / `test_mask_content` | Verifies masking: `ghp_abcd••••••••wxyz` |
+
+```bash
+cargo test credential_detector::tests
+```
+
+#### Prediction Engine (`prediction/engine.rs`) — 8 tests
+
+| Test | What It Verifies |
+|------|-----------------|
+| `test_pinned_higher_score` | Pinned items score 100+ higher than unpinned |
+| `test_recent_higher_than_old` | Items from 1 minute ago outscore items from 2 hours ago |
+| `test_frequency_boost` | Items pasted 50 times score higher than items pasted once |
+| `test_type_match_boosts_matching_content_type` | JSON items score higher when JSON is the most-pasted type into the target app |
+| `test_source_affinity_boosts_correlated_source` | Items from Chrome score higher when Chrome→target is a frequent pattern |
+| `test_full_ranking_order_with_mixed_items` | Verifies complete ranking: pinned > starred > recent > old |
+| `test_no_target_app_still_works` | Prediction works even without active window context |
+| `test_get_predictions_without_target_app` | Full prediction flow without target app returns valid results |
+
+```bash
+cargo test prediction::engine::tests
+```
+
+#### Workflow Chain Detection (`prediction/workflow.rs`) — 7 tests
+
+| Test | What It Verifies |
+|------|-----------------|
+| `test_track_copy_event_adds_to_window` | Events are tracked in the sliding window |
+| `test_track_copy_event_trims_to_max` | Window trims to max 10 events |
+| `test_detect_chain_finds_repeating_pattern` | Detects URL→Code→SQL repeated twice |
+| `test_detect_chain_no_match_without_repetition` | No false chain detection with non-repeating sequences |
+| `test_detect_chain_requires_source_match` | Chains must come from the same source apps |
+| `test_compute_chain_hash_deterministic` | Same pattern always produces the same SHA-256 hash |
+| `test_store_chain_and_upsert` | Chains are stored and frequency is incremented on repeat |
+| `test_get_top_chains_ordered_by_frequency` | Most frequent chains ranked first |
+
+```bash
+cargo test prediction::workflow::tests
+```
+
+#### Database & Queries — 16 tests
+
+| Test | What It Verifies |
+|------|-----------------|
+| `test_init_db` | Database initializes with WAL mode and all tables |
+| `test_migrations_idempotent` | Running migrations twice doesn't error |
+| `test_insert_and_get` | Insert a ClipItem and retrieve it by ID |
+| `test_delete_item` | Delete removes item and cascades |
+| `test_toggle_pin` | Pin/unpin toggle works |
+| `test_dedup_hash` | SHA-256 hash is consistent for same content |
+| `test_settings` | get/update settings round-trip |
+| `test_record_paste_increments_count` | Paste count increments on each paste event |
+| `test_get_paste_history` | Paste events are recorded and queryable |
+| `test_update_prediction_stat_increments_frequency` | Prediction stats track frequency |
+| `test_get_type_match_scores` | Type match scores reflect paste patterns |
+| `test_get_type_match_scores_empty` | Empty stats return empty scores |
+| `test_get_source_affinity` | Source affinity scoring works |
+| `test_get_source_affinity_no_data` | No data returns zero affinity |
+
+```bash
+cargo test storage::queries::tests
+cargo test storage::database::tests
+```
+
+#### Running a Single Test
+
+```bash
+cargo test test_name              # Run by test name
+cargo test classifier             # Run all tests with "classifier" in name
+cargo test -- --nocapture         # Show println! output during tests
+```
+
+---
 
 ### TypeScript Type Check
 
@@ -386,13 +520,266 @@ Test coverage:
 pnpm tsc --noEmit
 ```
 
-### E2E Tests (Playwright)
+Validates all `.ts` and `.tsx` files compile without errors. Enforced rules:
+- No `any` types anywhere
+- All IPC calls typed through `src/lib/tauri.ts`
+- All component props explicitly typed
+- Strict null checks enabled
+
+---
+
+### E2E Tests — Playwright (56 tests)
 
 ```bash
-pnpm test:e2e
+pnpm test:e2e                    # Run all E2E tests (headless)
+pnpm test:e2e -- --headed        # Run with visible browser
+pnpm test:e2e -- --debug         # Step-through debugger
 ```
 
-Covers: app launch, navigation, theme toggle, Quick Paste overlay, History panel, Settings panel.
+E2E tests run against the Vite dev server (auto-started on `localhost:1420`). They test the React frontend in isolation using Chromium.
+
+#### App Launch (`tests/e2e/app-launch.spec.ts`) — 9 tests
+
+| Test | What It Verifies |
+|------|-----------------|
+| `app loads and shows the main container` | Root `app-container` renders |
+| `nav bar renders with all 3 view buttons` | Clipboard, History, Settings nav items visible |
+| `default view is Quick Paste` | Quick Paste overlay shown on launch |
+| `clicking History nav switches view` | History panel renders on click |
+| `clicking Settings nav switches view` | Settings panel renders on click |
+| `clicking Clipboard nav returns to Quick Paste` | Navigation back to Quick Paste works |
+| `theme toggle button exists` | Sun/moon toggle button is visible |
+| `theme toggle switches theme` | Clicking toggle changes `dark` class on `<html>` |
+| `app container has correct structure` | Nav bar + content area both present |
+
+```bash
+pnpm test:e2e -- tests/e2e/app-launch.spec.ts
+```
+
+#### Quick Paste Overlay (`tests/e2e/quick-paste.spec.ts`) — 11 tests
+
+| Test | What It Verifies |
+|------|-----------------|
+| `overlay renders` | Quick Paste container visible |
+| `search bar is present` | Search input exists with placeholder |
+| `item list container exists` | `clip-item-list` container renders |
+| `shows empty state or items` | Handles both empty and populated states |
+| `search input is focusable` | Search bar can receive keyboard focus |
+| `typing in search filters content` | Input updates search state |
+| `keyboard shortcut hints shown` | Footer shows ↑↓, ↵, ⇥, esc hints |
+| `footer is visible` | Keyboard hints footer renders |
+| `overlay has backdrop styling` | Overlay has proper CSS classes |
+| `search clears on escape` | Escape key clears search input |
+| `ghost paste hint shown` | Tab/ghost paste instruction visible |
+
+```bash
+pnpm test:e2e -- tests/e2e/quick-paste.spec.ts
+```
+
+#### History Panel (`tests/e2e/history.spec.ts`) — 10 tests
+
+| Test | What It Verifies |
+|------|-----------------|
+| `history panel renders` | Panel container visible after nav click |
+| `search bar exists in history` | History search input present |
+| `filter bar renders` | Type filter bar visible |
+| `filter bar has All button` | "All" filter button exists |
+| `filter bar has type-specific buttons` | URL, Code, JSON, SQL, Shell, Secrets filters |
+| `clicking a filter button highlights it` | Active filter gets visual highlight |
+| `search input accepts text` | Can type in history search |
+| `empty state or items displayed` | Handles empty/populated states |
+| `history items show in a list` | Item list container renders |
+| `detail panel shows on item click` | Clicking an item shows detail view |
+
+```bash
+pnpm test:e2e -- tests/e2e/history.spec.ts
+```
+
+#### Settings Panel (`tests/e2e/settings.spec.ts`) — 26 tests
+
+**General Tab (7 tests)**:
+
+| Test | What It Verifies |
+|------|-----------------|
+| `settings panel renders` | Panel container visible |
+| `all 4 tabs are rendered` | General, Shortcuts, Security, AI tabs |
+| `General tab content renders by default` | General settings shown on load |
+| `max history items input exists` | Number input with min=100, max=50000 |
+| `theme selector exists` | Dropdown with System, Light, Dark options |
+| `overlay position selector exists` | At cursor, Center, Top right options |
+| `dedup enabled checkbox exists` | Deduplication toggle checkbox |
+
+**Shortcuts Tab (2 tests)**:
+
+| Test | What It Verifies |
+|------|-----------------|
+| `Shortcuts tab renders` | Shortcuts content visible on tab click |
+| `shortcut bindings are displayed` | Shows Ctrl+Shift+V and Ctrl+Shift+H |
+
+**Security Tab (4 tests)**:
+
+| Test | What It Verifies |
+|------|-----------------|
+| `Security tab renders` | Security content visible |
+| `credential auto-expire input exists` | Number input with min=1, max=1440 |
+| `clear expired credentials button exists` | Button present and clickable |
+| `clear all history button exists` | Red-styled danger button present |
+
+**AI Tab (13 tests)**:
+
+| Test | What It Verifies |
+|------|-----------------|
+| `AI tab renders` | AI settings content visible |
+| `enable predictions checkbox` | Predictions toggle works |
+| `AI provider selector has 3 options` | Local (ONNX), OpenAI, Ollama |
+| `selecting OpenAI shows API key field` | API key input appears for OpenAI |
+| `selecting Ollama shows base URL field` | Base URL input appears for Ollama |
+| `selecting Local hides API key field` | API key input hidden for local provider |
+| `switching back to Local hides fields` | Fields disappear when switching back |
+| `non-local provider shows Test button` | Save & Test Connection button visible |
+| `semantic search checkbox is clickable` | Checkbox is enabled and toggleable |
+| `Re-index All Items button exists` | Backfill button visible |
+| `show type badges checkbox` | Type badge toggle works |
+| `show source context checkbox` | Source context toggle works |
+| `overlay max items input` | Number input with min=3, max=20 |
+
+```bash
+pnpm test:e2e -- tests/e2e/settings.spec.ts
+```
+
+#### Running Specific Tests
+
+```bash
+# Run a single test by name
+pnpm test:e2e -- -g "theme toggle switches theme"
+
+# Run a single test file
+pnpm test:e2e -- tests/e2e/quick-paste.spec.ts
+
+# Run with specific browser
+pnpm test:e2e -- --project=chromium
+
+# Generate HTML report
+pnpm test:e2e -- --reporter=html
+npx playwright show-report
+```
+
+---
+
+### Manual Testing Checklist
+
+For features that require the full Tauri app (clipboard monitoring, global shortcuts, system tray), test manually:
+
+#### Clipboard Monitoring
+```
+1. Run `cargo tauri dev`
+2. Copy text from any app — verify it appears in Quick Paste overlay
+3. Copy a URL — verify it's classified as "URL" with blue badge
+4. Copy JSON — verify it's classified as "JSON" with green badge
+5. Copy the same text twice — verify dedup (only 1 entry)
+```
+
+#### Credential Detection
+```
+1. Copy a GitHub token: ghp_abcdefghijklmnopqrstuvwxyz1234567890
+2. Verify red "Secret" badge appears
+3. Verify content is masked: ghp_••••••••7890
+4. Wait 30 minutes (or set auto-expire to 1 minute) — verify auto-deletion
+5. Copy a JWT: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123
+6. Verify it's detected and masked
+```
+
+#### Prediction Engine
+```
+1. Copy several items, paste them into different apps
+2. Open Quick Paste in the same target app — verify recently-pasted items rank higher
+3. Pin an item — verify it always appears at top
+4. Star an item — verify it gets a score boost
+```
+
+#### Workflow Chains
+```
+1. Copy URL → Code → SQL from the same app, 3 times in sequence
+2. Check console/logs for "Chain detected" event
+3. Verify "Chain: 3 items" badge appears in Quick Paste overlay
+```
+
+#### Semantic Search (Phase 3)
+```
+1. Settings > AI > ensure "Enable semantic search" is checked
+2. For local mode: model loads automatically on first search
+3. Copy several items with different topics (email, code, URL)
+4. Open Quick Paste and type a natural language query:
+   - "that email address" → should surface email items
+   - "database connection" → should surface connection strings
+5. Short exact queries ("SELECT") should use FTS, not semantic search
+6. Verify "AI" sparkle badge appears next to search bar during semantic search
+```
+
+#### BYOK Provider Testing
+```
+# OpenAI
+1. Settings > AI > Select "OpenAI"
+2. Enter your API key (sk-...)
+3. Click "Save & Test Connection" — should show success
+4. Click "Re-index All Items" — should show "Indexed N items"
+
+# Ollama
+1. Install Ollama and run: ollama pull nomic-embed-text && ollama serve
+2. Settings > AI > Select "Ollama"
+3. Base URL defaults to http://localhost:11434
+4. Click "Save & Test Connection" — should show success
+
+# Local (default)
+1. Settings > AI > Select "Local (ONNX)"
+2. No API key needed — works immediately
+3. Status should show "AI Ready" with all-MiniLM-L6-v2 model
+```
+
+#### Global Shortcuts
+```
+1. Run `cargo tauri dev`
+2. Switch to any other app (e.g., Notepad)
+3. Press Ctrl+Shift+V — ContextPaste window should appear with Quick Paste
+4. Press Escape — overlay closes
+5. Press Ctrl+Shift+H — ContextPaste window should appear with History
+```
+
+#### System Tray
+```
+1. Right-click ContextPaste tray icon
+2. Click "Quick Paste" — opens overlay
+3. Click "History" — opens history browser
+4. Click "Settings" — opens settings panel
+5. Click "Quit" — app exits
+```
+
+---
+
+### CI/CD Testing
+
+The GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push/PR:
+
+```yaml
+# What CI runs:
+- cargo check          # Compile check
+- cargo clippy          # Lint (warnings = errors)
+- cargo test            # Unit tests
+- cargo fmt --check     # Format check
+- pnpm tsc --noEmit     # TypeScript type check
+- pnpm lint             # ESLint
+```
+
+---
+
+### Test Statistics
+
+| Layer | Tests | Speed | What It Covers |
+|-------|-------|-------|---------------|
+| Rust unit tests | 56 | ~0.1s | Classifier, credentials, prediction, workflow, DB, queries |
+| TypeScript check | — | ~3s | Type safety across all frontend code |
+| Playwright E2E | 56 | ~30s | UI rendering, navigation, settings, interactions |
+| **Total** | **112** | **~35s** | Full stack coverage |
 
 ---
 
