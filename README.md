@@ -22,7 +22,7 @@
 | **Local AI** | Built-in ONNX model ships with the app — no API key needed |
 | **Cloud AI** | BYOK (Bring Your Own Key) — use your own OpenAI, Anthropic, or Ollama key |
 | **Revenue** | [GitHub Sponsors](https://github.com/sponsors/user) + donations. Future: optional cloud sync service |
-| **Distribution** | [GitHub Releases](https://github.com/mthamil107/contextpaste/releases) — exe, msi, dmg, deb, AppImage |
+| **Distribution** | [GitHub Releases](https://github.com/mthamil107/contextpaste/releases) — exe, msi (Windows). macOS/Linux coming soon |
 | **Telemetry** | None. Zero tracking. All data stays on your machine. |
 
 ---
@@ -344,11 +344,14 @@ score = pin_boost * 100           // Pinned items always on top
 
 | Platform | Download | Size |
 |----------|----------|------|
-| Windows (installer) | [ContextPaste-setup.msi](https://github.com/mthamil107/contextpaste/releases/latest) | ~10MB |
-| Windows (portable) | [ContextPaste-setup.exe](https://github.com/mthamil107/contextpaste/releases/latest) | ~10MB |
-| macOS | [ContextPaste.dmg](https://github.com/mthamil107/contextpaste/releases/latest) | ~10MB |
-| Linux (Debian/Ubuntu) | [contextpaste_amd64.deb](https://github.com/mthamil107/contextpaste/releases/latest) | ~10MB |
-| Linux (AppImage) | [ContextPaste.AppImage](https://github.com/mthamil107/contextpaste/releases/latest) | ~10MB |
+| Windows (installer, NSIS) | [ContextPaste_0.1.0_x64-setup.exe](https://github.com/mthamil107/contextpaste/releases/latest) | ~82MB |
+| Windows (installer, MSI) | [ContextPaste_0.1.0_x64_en-US.msi](https://github.com/mthamil107/contextpaste/releases/latest) | ~85MB |
+| Windows (portable) | [ContextPaste-portable.exe](https://github.com/mthamil107/contextpaste/releases/latest) | ~15MB |
+| macOS | Coming soon | — |
+| Linux (Debian/Ubuntu) | Coming soon | — |
+| Linux (AppImage) | Coming soon | — |
+
+> **Note**: Installer size includes the bundled ONNX AI model (~87MB). The portable exe does not include the model — use an installer for full AI/semantic search functionality.
 
 ### Build from Source
 
@@ -790,7 +793,7 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push/PR:
 - **Database**: SQLite (WAL mode) + FTS5 full-text search
 - **UI Library**: cmdk pattern + Lucide icons
 - **AI**: ONNX Runtime (all-MiniLM-L6-v2) + cosine similarity search
-- **Installer size**: ~10MB (vs 100MB+ for Electron apps)
+- **Installer size**: ~82MB with bundled AI model (portable exe: ~15MB)
 - **Memory usage**: ~50MB (vs 200MB+ for Electron apps)
 
 ---
