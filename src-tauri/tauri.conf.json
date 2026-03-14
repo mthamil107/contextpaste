@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-cli/schema.json",
   "productName": "ContextPaste",
-  "version": "0.1.0",
-  "identifier": "com.contextpaste.app",
+  "version": "0.2.0",
+  "identifier": "com.contextpaste.desktop",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -13,14 +13,17 @@
     "windows": [
       {
         "title": "ContextPaste",
-        "width": 420,
-        "height": 480,
+        "width": 720,
+        "height": 560,
+        "minWidth": 480,
+        "minHeight": 400,
         "resizable": true,
         "decorations": false,
-        "transparent": true,
-        "visible": false,
-        "skipTaskbar": true,
-        "alwaysOnTop": true,
+        "transparent": false,
+        "visible": true,
+        "skipTaskbar": false,
+        "alwaysOnTop": false,
+        "center": true,
         "label": "main"
       }
     ],
