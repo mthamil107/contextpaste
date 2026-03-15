@@ -82,6 +82,9 @@ export interface AppSettings {
   overlayMaxItems: number;
   dedupEnabled: boolean;
   dedupWindowSeconds: number;
+  enableAutoPaste: boolean;
+  autoPasteThreshold: number;
+  showAutoPasteToast: boolean;
 }
 
 export interface AiStatus {
@@ -91,6 +94,50 @@ export interface AiStatus {
   embeddedCount: number;
   totalItems: number;
   dimension: number;
+}
+
+export interface PasteRule {
+  id: string;
+  name: string;
+  priority: number;
+  enabled: boolean;
+  appPattern?: string;
+  windowTitlePattern?: string;
+  contextPattern?: string;
+  contentTypeFilter?: string;
+  actionType: string;
+  actionValue: string;
+  timesTriggered: number;
+  lastTriggeredAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScreenContext {
+  appName?: string;
+  windowTitle?: string;
+  focusedText?: string;
+  surroundingText?: string;
+}
+
+export interface AutoPasteResult {
+  action: string;
+  item?: ClipItem;
+  confidence: number;
+  matchedRule?: string;
+  reason: string;
+}
+
+export interface AutoPasteEvent {
+  id: string;
+  itemId: string;
+  ruleId?: string;
+  confidence: number;
+  wasCorrect?: boolean;
+  screenContext?: string;
+  targetApp?: string;
+  targetWindowTitle?: string;
+  pastedAt: string;
 }
 
 // Content type display configuration

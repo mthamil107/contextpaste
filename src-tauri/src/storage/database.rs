@@ -193,6 +193,39 @@ const MIGRATIONS: &[&str] = &[
         model_name TEXT,
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );",
+    // v3: Context-aware auto-paste tables
+    "CREATE TABLE IF NOT EXISTS paste_rules (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        priority INTEGER NOT NULL DEFAULT 0,
+        enabled BOOLEAN NOT NULL DEFAULT 1,
+        app_pattern TEXT,
+        window_title_pattern TEXT,
+        context_pattern TEXT,
+        content_type_filter TEXT,
+        action_type TEXT NOT NULL DEFAULT 'paste_recent_type',
+        action_value TEXT NOT NULL,
+        times_triggered INTEGER NOT NULL DEFAULT 0,
+        last_triggered_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_paste_rules_enabled ON paste_rules(enabled, priority DESC);
+
+    CREATE TABLE IF NOT EXISTS auto_paste_events (
+        id TEXT PRIMARY KEY,
+        item_id TEXT NOT NULL REFERENCES clip_items(id) ON DELETE CASCADE,
+        rule_id TEXT REFERENCES paste_rules(id) ON DELETE SET NULL,
+        confidence REAL NOT NULL,
+        was_correct BOOLEAN,
+        screen_context TEXT,
+        target_app TEXT,
+        target_window_title TEXT,
+        pasted_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_auto_paste_time ON auto_paste_events(pasted_at DESC);",
 ];
 
 #[cfg(test)]

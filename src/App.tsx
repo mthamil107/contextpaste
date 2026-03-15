@@ -10,6 +10,7 @@ import { QuickPasteOverlay } from "./components/QuickPaste/QuickPasteOverlay";
 import { HistoryPanel } from "./components/History/HistoryPanel";
 import { SettingsPanel } from "./components/Settings/SettingsPanel";
 import { ThemeToggle } from "./components/shared/ThemeToggle";
+import { AutoPasteToast } from "./components/shared/AutoPasteToast";
 import { Clipboard, History, Settings, Minus, Square, X } from "lucide-react";
 import clsx from "clsx";
 
@@ -170,6 +171,9 @@ function App() {
         <span>v0.1.0</span>
         <span>GPL v3 — Free Forever</span>
       </div>
+
+      {/* Auto-paste notification toast */}
+      <AutoPasteToast />
     </div>
   );
 }

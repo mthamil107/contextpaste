@@ -34,6 +34,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   overlayMaxItems: DEFAULTS.OVERLAY_MAX_ITEMS,
   dedupEnabled: true,
   dedupWindowSeconds: DEFAULTS.DEDUP_WINDOW_SECONDS,
+  enableAutoPaste: false,
+  autoPasteThreshold: 0.75,
+  showAutoPasteToast: true,
 };
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -71,6 +74,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
           raw.overlayPosition as AppSettings["overlayPosition"];
       if (raw.dedupEnabled)
         merged.dedupEnabled = raw.dedupEnabled === "true";
+      if (raw.enableAutoPaste)
+        merged.enableAutoPaste = raw.enableAutoPaste === "true";
+      if (raw.autoPasteThreshold)
+        merged.autoPasteThreshold = parseFloat(raw.autoPasteThreshold);
+      if (raw.showAutoPasteToast)
+        merged.showAutoPasteToast = raw.showAutoPasteToast === "true";
 
       set({ settings: merged, loaded: true });
     } catch (e) {

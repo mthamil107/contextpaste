@@ -133,3 +133,55 @@ pub struct ChainItem {
     pub position: i32,
     pub preview: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasteRule {
+    pub id: String,
+    pub name: String,
+    pub priority: i32,
+    pub enabled: bool,
+    pub app_pattern: Option<String>,
+    pub window_title_pattern: Option<String>,
+    pub context_pattern: Option<String>,
+    pub content_type_filter: Option<String>,
+    pub action_type: String,
+    pub action_value: String,
+    pub times_triggered: i64,
+    pub last_triggered_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenContext {
+    pub app_name: Option<String>,
+    pub window_title: Option<String>,
+    pub focused_text: Option<String>,
+    pub surrounding_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoPasteResult {
+    pub action: String,
+    pub item: Option<ClipItem>,
+    pub confidence: f64,
+    pub matched_rule: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoPasteEvent {
+    pub id: String,
+    pub item_id: String,
+    pub rule_id: Option<String>,
+    pub confidence: f64,
+    pub was_correct: Option<bool>,
+    pub screen_context: Option<String>,
+    pub target_app: Option<String>,
+    pub target_window_title: Option<String>,
+    pub pasted_at: String,
+}

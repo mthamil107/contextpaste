@@ -6,14 +6,16 @@ import { GeneralSettings } from "./GeneralSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { SecuritySettings } from "./SecuritySettings";
 import { AISettings } from "./AISettings";
+import { AutoPasteSettings } from "./AutoPasteSettings";
 
-type SettingsTab = "general" | "shortcuts" | "security" | "ai";
+type SettingsTab = "general" | "shortcuts" | "security" | "ai" | "auto-paste";
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "shortcuts", label: "Shortcuts" },
   { id: "security", label: "Security" },
   { id: "ai", label: "AI" },
+  { id: "auto-paste", label: "Auto-Paste" },
 ];
 
 export function SettingsPanel() {
@@ -46,6 +48,7 @@ export function SettingsPanel() {
         {activeTab === "shortcuts" && <div data-testid="settings-content-shortcuts"><ShortcutSettings /></div>}
         {activeTab === "security" && <div data-testid="settings-content-security"><SecuritySettings /></div>}
         {activeTab === "ai" && <div data-testid="settings-content-ai"><AISettings /></div>}
+        {activeTab === "auto-paste" && <div data-testid="settings-content-auto-paste"><AutoPasteSettings /></div>}
       </div>
     </div>
   );

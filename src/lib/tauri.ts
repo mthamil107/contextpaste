@@ -4,7 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AiStatus, ClipItem, RankedItem, WorkflowChain } from "./types";
+import type { AiStatus, AutoPasteEvent, AutoPasteResult, ClipItem, PasteRule, RankedItem, WorkflowChain } from "./types";
 
 // ============================================================
 // Clipboard Commands
@@ -132,6 +132,38 @@ export async function backfillEmbeddings(): Promise<number> {
 }
 
 // ============================================================
+// Auto-Paste Commands
+// ============================================================
+
+export async function getPasteRules(): Promise<PasteRule[]> {
+  return invoke<PasteRule[]>("get_paste_rules");
+}
+
+export async function createPasteRule(rule: Omit<PasteRule, 'id' | 'timesTriggered' | 'lastTriggeredAt' | 'createdAt' | 'updatedAt'>): Promise<string> {
+  return invoke<string>("create_paste_rule", { rule });
+}
+
+export async function updatePasteRule(rule: PasteRule): Promise<void> {
+  return invoke<void>("update_paste_rule", { rule });
+}
+
+export async function deletePasteRule(id: string): Promise<void> {
+  return invoke<void>("delete_paste_rule", { id });
+}
+
+export async function togglePasteRule(id: string): Promise<void> {
+  return invoke<void>("toggle_paste_rule", { id });
+}
+
+export async function getAutoPasteHistory(limit: number): Promise<AutoPasteEvent[]> {
+  return invoke<AutoPasteEvent[]>("get_auto_paste_history", { limit });
+}
+
+export async function rateAutoPaste(eventId: string, correct: boolean): Promise<void> {
+  return invoke<void>("rate_auto_paste", { eventId, correct });
+}
+
+// ============================================================
 // Event Listeners
 // ============================================================
 
@@ -174,6 +206,14 @@ export function onSettingsChanged(
   callback: (data: { key: string; value: string }) => void,
 ): Promise<UnlistenFn> {
   return listen<{ key: string; value: string }>("settings:changed", (event) => {
+    callback(event.payload);
+  });
+}
+
+export function onAutoPasteSuccess(
+  callback: (result: AutoPasteResult) => void,
+): Promise<UnlistenFn> {
+  return listen<AutoPasteResult>("autopaste:success", (event) => {
     callback(event.payload);
   });
 }

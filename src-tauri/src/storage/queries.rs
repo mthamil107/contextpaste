@@ -4,7 +4,7 @@ use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
 
 use super::database::DbPool;
-use super::models::{ClipItem, ContentType, PasteEvent, WorkflowChain};
+use super::models::{AutoPasteEvent, ClipItem, ContentType, PasteEvent, PasteRule, WorkflowChain};
 
 /// Insert a new clipboard item. Returns the item ID.
 pub fn insert_clip_item(db: &DbPool, item: &ClipItem) -> Result<String, String> {
@@ -660,6 +660,227 @@ pub fn clear_all_embeddings(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
+// --- Paste Rules CRUD ---
+
+/// Get all enabled paste rules, ordered by priority DESC.
+pub fn get_enabled_paste_rules(db: &DbPool) -> Result<Vec<PasteRule>, String> {
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, priority, enabled, app_pattern, window_title_pattern,
+             context_pattern, content_type_filter, action_type, action_value,
+             times_triggered, last_triggered_at, created_at, updated_at
+             FROM paste_rules WHERE enabled = 1 ORDER BY priority DESC",
+        )
+        .map_err(|e| format!("Failed to prepare paste rules query: {}", e))?;
+
+    let rules = stmt
+        .query_map([], row_to_paste_rule)
+        .map_err(|e| format!("Failed to query paste rules: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(rules)
+}
+
+/// Get all paste rules (enabled and disabled), ordered by priority DESC.
+pub fn get_all_paste_rules(db: &DbPool) -> Result<Vec<PasteRule>, String> {
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, priority, enabled, app_pattern, window_title_pattern,
+             context_pattern, content_type_filter, action_type, action_value,
+             times_triggered, last_triggered_at, created_at, updated_at
+             FROM paste_rules ORDER BY priority DESC",
+        )
+        .map_err(|e| format!("Failed to prepare paste rules query: {}", e))?;
+
+    let rules = stmt
+        .query_map([], row_to_paste_rule)
+        .map_err(|e| format!("Failed to query paste rules: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(rules)
+}
+
+/// Create a new paste rule.
+pub fn create_paste_rule(db: &DbPool, rule: &PasteRule) -> Result<(), String> {
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+    conn.execute(
+        "INSERT INTO paste_rules (id, name, priority, enabled, app_pattern, window_title_pattern,
+         context_pattern, content_type_filter, action_type, action_value,
+         times_triggered, last_triggered_at, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        params![
+            rule.id,
+            rule.name,
+            rule.priority,
+            rule.enabled,
+            rule.app_pattern,
+            rule.window_title_pattern,
+            rule.context_pattern,
+            rule.content_type_filter,
+            rule.action_type,
+            rule.action_value,
+            rule.times_triggered,
+            rule.last_triggered_at,
+            rule.created_at,
+            rule.updated_at,
+        ],
+    )
+    .map_err(|e| format!("Failed to create paste rule: {}", e))?;
+    Ok(())
+}
+
+/// Update an existing paste rule.
+pub fn update_paste_rule(db: &DbPool, rule: &PasteRule) -> Result<(), String> {
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+    conn.execute(
+        "UPDATE paste_rules SET name = ?2, priority = ?3, enabled = ?4, app_pattern = ?5,
+         window_title_pattern = ?6, context_pattern = ?7, content_type_filter = ?8,
+         action_type = ?9, action_value = ?10, updated_at = datetime('now')
+         WHERE id = ?1",
+        params![
+            rule.id,
+            rule.name,
+            rule.priority,
+            rule.enabled,
+            rule.app_pattern,
+            rule.window_title_pattern,
+            rule.context_pattern,
+            rule.content_type_filter,
+            rule.action_type,
+            rule.action_value,
+        ],
+    )
+    .map_err(|e| format!("Failed to update paste rule: {}", e))?;
+    Ok(())
+}
+
+/// Delete a paste rule by ID.
+pub fn delete_paste_rule(db: &DbPool, id: &str) -> Result<(), String> {
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+    conn.execute("DELETE FROM paste_rules WHERE id = ?1", params![id])
+        .map_err(|e| format!("Failed to delete paste rule: {}", e))?;
+    Ok(())
+}
+
+/// Toggle enabled status on a paste rule.
+pub fn toggle_paste_rule(db: &DbPool, id: &str) -> Result<(), String> {
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+    conn.execute(
+        "UPDATE paste_rules SET enabled = NOT enabled, updated_at = datetime('now') WHERE id = ?1",
+        params![id],
+    )
+    .map_err(|e| format!("Failed to toggle paste rule: {}", e))?;
+    Ok(())
+}
+
+/// Increment trigger count and update last_triggered_at for a paste rule.
+pub fn increment_rule_trigger(db: &DbPool, id: &str) -> Result<(), String> {
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+    conn.execute(
+        "UPDATE paste_rules SET times_triggered = times_triggered + 1,
+         last_triggered_at = datetime('now'), updated_at = datetime('now')
+         WHERE id = ?1",
+        params![id],
+    )
+    .map_err(|e| format!("Failed to increment rule trigger: {}", e))?;
+    Ok(())
+}
+
+// --- Auto-paste event tracking ---
+
+/// Record an auto-paste event.
+pub fn record_auto_paste_event(db: &DbPool, event: &AutoPasteEvent) -> Result<(), String> {
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+    conn.execute(
+        "INSERT INTO auto_paste_events (id, item_id, rule_id, confidence, was_correct,
+         screen_context, target_app, target_window_title, pasted_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            event.id,
+            event.item_id,
+            event.rule_id,
+            event.confidence,
+            event.was_correct,
+            event.screen_context,
+            event.target_app,
+            event.target_window_title,
+            event.pasted_at,
+        ],
+    )
+    .map_err(|e| format!("Failed to record auto-paste event: {}", e))?;
+    Ok(())
+}
+
+/// Get auto-paste event history, ordered by most recent first.
+pub fn get_auto_paste_history(db: &DbPool, limit: u32) -> Result<Vec<AutoPasteEvent>, String> {
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, item_id, rule_id, confidence, was_correct,
+             screen_context, target_app, target_window_title, pasted_at
+             FROM auto_paste_events ORDER BY pasted_at DESC LIMIT ?1",
+        )
+        .map_err(|e| format!("Failed to prepare auto-paste history query: {}", e))?;
+
+    let events = stmt
+        .query_map(params![limit], |row| {
+            Ok(AutoPasteEvent {
+                id: row.get(0)?,
+                item_id: row.get(1)?,
+                rule_id: row.get(2)?,
+                confidence: row.get(3)?,
+                was_correct: row.get(4)?,
+                screen_context: row.get(5)?,
+                target_app: row.get(6)?,
+                target_window_title: row.get(7)?,
+                pasted_at: row.get(8)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query auto-paste history: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(events)
+}
+
+/// Rate an auto-paste event as correct or incorrect (user feedback).
+pub fn rate_auto_paste(db: &DbPool, event_id: &str, correct: bool) -> Result<(), String> {
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+    conn.execute(
+        "UPDATE auto_paste_events SET was_correct = ?2 WHERE id = ?1",
+        params![event_id, correct],
+    )
+    .map_err(|e| format!("Failed to rate auto-paste event: {}", e))?;
+    Ok(())
+}
+
+/// Get the most recent clip item of a given content type.
+pub fn get_most_recent_by_type(db: &DbPool, content_type: &str) -> Result<Option<ClipItem>, String> {
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+    get_most_recent_by_type_conn(&conn, content_type)
+}
+
+/// Get the most recent clip item of a given content type (using raw connection).
+pub fn get_most_recent_by_type_conn(conn: &Connection, content_type: &str) -> Result<Option<ClipItem>, String> {
+    let result = conn.query_row(
+        "SELECT id, content, content_type, content_hash, content_length,
+         is_credential, credential_type, source_app, source_window_title,
+         is_pinned, is_starred, expires_at, created_at, last_pasted_at, paste_count, tags
+         FROM clip_items WHERE content_type = ?1 ORDER BY created_at DESC LIMIT 1",
+        params![content_type],
+        row_to_clip_item,
+    );
+    match result {
+        Ok(item) => Ok(Some(item)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(format!("Failed to get most recent by type: {}", e)),
+    }
+}
+
 // --- Row mapper ---
 
 fn row_to_clip_item(row: &rusqlite::Row) -> rusqlite::Result<ClipItem> {
@@ -686,6 +907,25 @@ fn row_to_clip_item(row: &rusqlite::Row) -> rusqlite::Result<ClipItem> {
         last_pasted_at: row.get(13)?,
         paste_count: row.get(14)?,
         tags,
+    })
+}
+
+fn row_to_paste_rule(row: &rusqlite::Row) -> rusqlite::Result<PasteRule> {
+    Ok(PasteRule {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        priority: row.get(2)?,
+        enabled: row.get(3)?,
+        app_pattern: row.get(4)?,
+        window_title_pattern: row.get(5)?,
+        context_pattern: row.get(6)?,
+        content_type_filter: row.get(7)?,
+        action_type: row.get(8)?,
+        action_value: row.get(9)?,
+        times_triggered: row.get(10)?,
+        last_triggered_at: row.get(11)?,
+        created_at: row.get(12)?,
+        updated_at: row.get(13)?,
     })
 }
 
