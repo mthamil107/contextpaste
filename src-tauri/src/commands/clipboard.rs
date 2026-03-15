@@ -3,6 +3,7 @@
 use tauri::State;
 
 use crate::prediction::context;
+use crate::prediction::context_reader;
 use crate::storage::database::DbPool;
 use crate::storage::models::{ClipItem, PasteEvent};
 use crate::storage::queries;
@@ -68,6 +69,32 @@ pub fn paste_item(db: State<'_, DbPool>, id: String) -> Result<(), String> {
             target_app,
         )?;
     }
+
+    // Record learned pattern (capture WHERE + WHAT for future auto-paste)
+    // Do this in a background thread to avoid blocking the paste
+    let learn_db = db.inner().clone();
+    let content_type = item.content_type.as_str().to_string();
+    let target_app = window_ctx.app_name.clone();
+    let target_title = window_ctx.window_title.clone();
+    let item_id = id.clone();
+    std::thread::spawn(move || {
+        // Read screen context (what the app is asking for)
+        let screen = context_reader::read_screen_context();
+        let screen_text = screen.focused_text
+            .or(screen.surrounding_text)
+            .or(screen.window_title);
+
+        if let Err(e) = queries::record_learned_pattern(
+            &learn_db,
+            &content_type,
+            target_app.as_deref(),
+            target_title.as_deref(),
+            screen_text.as_deref(),
+            &item_id,
+        ) {
+            log::debug!("Failed to record learned pattern: {}", e);
+        }
+    });
 
     Ok(())
 }

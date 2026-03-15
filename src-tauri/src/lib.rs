@@ -64,6 +64,10 @@ pub fn run() {
             commands::prediction::toggle_paste_rule,
             commands::prediction::get_auto_paste_history,
             commands::prediction::rate_auto_paste,
+            // Learned patterns commands
+            commands::prediction::get_learned_patterns,
+            commands::prediction::promote_pattern_to_rule,
+            commands::prediction::delete_learned_pattern,
             // AI commands
             commands::ai::configure_ai_provider,
             commands::ai::test_ai_connection,
@@ -92,49 +96,11 @@ pub fn run() {
 
             // Register global shortcuts
             let handle = app.handle();
-            let shortcut_db = db.clone();
             handle
                 .global_shortcut()
-                .on_shortcut("ctrl+shift+v", move |app, _shortcut, event| {
+                .on_shortcut("ctrl+shift+v", |app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
-                        // Check if auto-paste is enabled
-                        let (auto_paste_enabled, threshold) = {
-                            let settings = storage::queries::get_all_settings(&shortcut_db)
-                                .unwrap_or_default();
-                            let enabled = settings.get("enableAutoPaste")
-                                .map(|v| v == "true")
-                                .unwrap_or(false);
-                            let thresh = settings.get("autoPasteThreshold")
-                                .and_then(|v| v.parse::<f64>().ok())
-                                .unwrap_or(0.75);
-                            (enabled, thresh)
-                        };
-
-                        if auto_paste_enabled {
-
-                            match prediction::auto_paste::try_auto_paste(&shortcut_db, threshold) {
-                                Ok(result) if result.action == "AutoPaste" => {
-                                    if let Some(ref item) = result.item {
-                                        // Write item content to system clipboard and simulate paste
-                                        if let Ok(mut clip) = arboard::Clipboard::new() {
-                                            let _ = clip.set_text(&item.content);
-                                        }
-                                        // Emit success event for toast notification
-                                        let _ = app.emit("autopaste:success", &result);
-                                        log::info!("Auto-pasted item: {} (confidence: {:.2})", item.id, result.confidence);
-                                    }
-                                    return; // Don't show overlay
-                                }
-                                Ok(_) => {
-                                    log::debug!("Auto-paste confidence too low, showing overlay");
-                                }
-                                Err(e) => {
-                                    log::debug!("Auto-paste failed, showing overlay: {}", e);
-                                }
-                            }
-                        }
-
-                        // Fall through: show overlay
+                        // ALWAYS show window + overlay immediately (never block)
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();

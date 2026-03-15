@@ -23,6 +23,12 @@ export function SearchBar({
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          // Let arrow keys, Enter, Escape, Tab bubble to the window keyboard handler
+          if (["ArrowUp", "ArrowDown", "Enter", "Escape", "Tab"].includes(e.key)) {
+            e.currentTarget.blur();
+          }
+        }}
         placeholder={placeholder}
         className="w-full bg-transparent text-sm text-cp-text outline-none placeholder:text-cp-muted"
         autoFocus

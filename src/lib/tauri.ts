@@ -4,7 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AiStatus, AutoPasteEvent, AutoPasteResult, ClipItem, PasteRule, RankedItem, WorkflowChain } from "./types";
+import type { AiStatus, AutoPasteEvent, AutoPasteResult, ClipItem, LearnedPattern, PasteRule, RankedItem, WorkflowChain } from "./types";
 
 // ============================================================
 // Clipboard Commands
@@ -216,4 +216,19 @@ export function onAutoPasteSuccess(
   return listen<AutoPasteResult>("autopaste:success", (event) => {
     callback(event.payload);
   });
+}
+
+// ============================================================
+// Learned Patterns Commands
+
+export async function getLearnedPatterns(limit: number): Promise<LearnedPattern[]> {
+  return invoke<LearnedPattern[]>("get_learned_patterns", { limit });
+}
+
+export async function promotePatternToRule(patternId: string): Promise<string> {
+  return invoke<string>("promote_pattern_to_rule", { patternId });
+}
+
+export async function deleteLearnedPattern(id: string): Promise<void> {
+  return invoke<void>("delete_learned_pattern", { id });
 }

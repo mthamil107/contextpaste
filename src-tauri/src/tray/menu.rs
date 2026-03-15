@@ -2,7 +2,7 @@
 
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::TrayIconBuilder,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     App, Emitter, Manager,
 };
 
@@ -44,7 +44,23 @@ pub fn setup_tray(app: &App) -> Result<(), String> {
 
     let _tray = TrayIconBuilder::new()
         .menu(&menu)
-        .tooltip("ContextPaste")
+        .tooltip("ContextPaste — AI Clipboard Manager")
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            // Left-click on tray icon shows the window
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let app = tray.app_handle();
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        })
         .on_menu_event(|app, event| match event.id.as_ref() {
             "quick_paste" => {
                 if let Some(window) = app.get_webview_window("main") {

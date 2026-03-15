@@ -68,6 +68,32 @@ pub fn try_auto_paste(
         });
     }
 
+    // Step 2.5: Check learned patterns (from previous manual pastes)
+    let inferred_from_context = infer_content_types(&build_context_string(&screen));
+    for inferred_type in &inferred_from_context {
+        if let Ok(Some(pattern)) = crate::storage::queries::find_matching_pattern(
+            db,
+            inferred_type,
+            screen.app_name.as_deref(),
+        ) {
+            // Found a learned pattern — get the most recent item of that type
+            if let Ok(Some(item)) = crate::storage::queries::get_most_recent_by_type(db, &pattern.content_type) {
+                if !item.is_credential {
+                    let confidence = 0.5 + (pattern.frequency as f64 * 0.05).min(0.4); // 0.55-0.90 based on frequency
+                    if confidence >= threshold {
+                        return Ok(AutoPasteResult {
+                            action: "AutoPaste".to_string(),
+                            item: Some(item),
+                            confidence,
+                            matched_rule: Some(format!("Learned: {} in {}", pattern.content_type, pattern.target_app.as_deref().unwrap_or("?"))),
+                            reason: format!("Learned pattern (used {} times)", pattern.frequency),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     // Step 3: Build combined context string for heuristic matching
     let context_text = build_context_string(&screen);
     if context_text.is_empty() {

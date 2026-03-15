@@ -50,7 +50,7 @@ export function ClipItemRow({ item, selected, flash, onSelect, onPaste }: ClipIt
       className={clsx(
         "flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 transition-colors",
         selected
-          ? "bg-cp-accent/10 text-cp-text"
+          ? "bg-cp-accent/20 ring-2 ring-cp-accent text-cp-text font-medium"
           : "text-cp-text hover:bg-cp-border/50",
         flash && "animate-ghost-flash",
       )}

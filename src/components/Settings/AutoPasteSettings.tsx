@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { useSettings } from "../../hooks/useSettings";
-import { getPasteRules, createPasteRule, deletePasteRule, togglePasteRule } from "../../lib/tauri";
-import type { PasteRule, ContentType } from "../../lib/types";
-import { Plus, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
+import { getPasteRules, createPasteRule, deletePasteRule, togglePasteRule, getLearnedPatterns, promotePatternToRule, deleteLearnedPattern } from "../../lib/tauri";
+import type { PasteRule, LearnedPattern, ContentType } from "../../lib/types";
+import { Plus, Trash2, ToggleLeft, ToggleRight, Sparkles, ArrowUpCircle } from "lucide-react";
 
 const CONTENT_TYPES: ContentType[] = [
   "Url", "Email", "IpAddress", "Json", "Yaml", "Sql",
@@ -13,6 +13,7 @@ const CONTENT_TYPES: ContentType[] = [
 export function AutoPasteSettings() {
   const { settings, updateSetting } = useSettings();
   const [rules, setRules] = useState<PasteRule[]>([]);
+  const [patterns, setPatterns] = useState<LearnedPattern[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newRule, setNewRule] = useState({
     name: "",
@@ -28,6 +29,7 @@ export function AutoPasteSettings() {
 
   useEffect(() => {
     getPasteRules().then(setRules).catch(() => {});
+    getLearnedPatterns(20).then(setPatterns).catch(() => {});
   }, []);
 
   const handleAddRule = async () => {
@@ -245,6 +247,75 @@ export function AutoPasteSettings() {
                 onClick={() => handleDelete(rule.id)}
                 className="p-1 text-cp-muted hover:text-red-400"
                 title="Delete"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Learned Patterns */}
+      <div className="border-t border-cp-border pt-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Sparkles size={14} className="text-cp-accent" />
+          <h4 className="text-sm font-semibold text-cp-text">Learned Patterns</h4>
+        </div>
+        <p className="text-xs text-cp-muted mb-3">
+          ContextPaste learns from every manual paste — what you paste, where, and what the screen shows.
+          Promote frequent patterns to rules for reliable auto-paste.
+        </p>
+
+        {patterns.length === 0 && (
+          <p className="text-xs text-cp-muted italic">
+            No patterns learned yet. Use Ctrl+Shift+V to paste items and patterns will appear here.
+          </p>
+        )}
+        {patterns.map((p) => (
+          <div
+            key={p.id}
+            className="flex items-center justify-between rounded-lg border border-cp-border bg-cp-bg px-3 py-2 mb-2"
+          >
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-cp-text truncate">
+                {p.contentType} → {p.targetApp ?? "any app"}
+              </p>
+              <p className="text-[10px] text-cp-muted truncate">
+                {p.screenContext ? `Context: "${p.screenContext}"` : "No context captured"}
+              </p>
+              <p className="text-[10px] text-cp-muted">
+                Used {p.frequency} time{p.frequency !== 1 ? "s" : ""}
+              </p>
+            </div>
+            <div className="flex items-center gap-1 ml-2">
+              <button
+                onClick={async () => {
+                  try {
+                    await promotePatternToRule(p.id);
+                    setPatterns(patterns.filter((x) => x.id !== p.id));
+                    const updated = await getPasteRules();
+                    setRules(updated);
+                  } catch (e) {
+                    console.error("Failed to promote:", e);
+                  }
+                }}
+                className="flex items-center gap-1 rounded-md bg-cp-accent/10 px-2 py-1 text-[10px] text-cp-accent hover:bg-cp-accent/20"
+                title="Promote to rule"
+              >
+                <ArrowUpCircle size={12} />
+                Make Rule
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    await deleteLearnedPattern(p.id);
+                    setPatterns(patterns.filter((x) => x.id !== p.id));
+                  } catch (e) {
+                    console.error("Failed to delete:", e);
+                  }
+                }}
+                className="p-1 text-cp-muted hover:text-red-400"
+                title="Dismiss"
               >
                 <Trash2 size={14} />
               </button>

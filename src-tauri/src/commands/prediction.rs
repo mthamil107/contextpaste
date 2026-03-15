@@ -6,7 +6,7 @@ use crate::prediction::engine;
 use crate::prediction::workflow;
 use crate::prediction::auto_paste;
 use crate::storage::database::DbPool;
-use crate::storage::models::{AutoPasteEvent, AutoPasteResult, PasteRule, RankedItem, WorkflowChain};
+use crate::storage::models::{AutoPasteEvent, AutoPasteResult, LearnedPattern, PasteRule, RankedItem, WorkflowChain};
 use crate::storage::queries;
 
 #[tauri::command]
@@ -100,4 +100,30 @@ pub fn rate_auto_paste(
     correct: bool,
 ) -> Result<(), String> {
     queries::rate_auto_paste(&db, &event_id, correct)
+}
+
+// Learned patterns commands
+
+#[tauri::command]
+pub fn get_learned_patterns(
+    db: State<'_, DbPool>,
+    limit: u32,
+) -> Result<Vec<LearnedPattern>, String> {
+    queries::get_learned_patterns(&db, limit)
+}
+
+#[tauri::command]
+pub fn promote_pattern_to_rule(
+    db: State<'_, DbPool>,
+    pattern_id: String,
+) -> Result<String, String> {
+    queries::promote_pattern_to_rule(&db, &pattern_id)
+}
+
+#[tauri::command]
+pub fn delete_learned_pattern(
+    db: State<'_, DbPool>,
+    id: String,
+) -> Result<(), String> {
+    queries::delete_learned_pattern(&db, &id)
 }

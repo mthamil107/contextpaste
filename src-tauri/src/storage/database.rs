@@ -226,6 +226,22 @@ const MIGRATIONS: &[&str] = &[
     );
 
     CREATE INDEX IF NOT EXISTS idx_auto_paste_time ON auto_paste_events(pasted_at DESC);",
+    // v4: Learned paste patterns — records WHERE + WHAT for every manual paste
+    "CREATE TABLE IF NOT EXISTS learned_patterns (
+        id TEXT PRIMARY KEY,
+        content_type TEXT NOT NULL,
+        target_app TEXT,
+        target_window_title TEXT,
+        screen_context TEXT,
+        item_id TEXT REFERENCES clip_items(id) ON DELETE SET NULL,
+        frequency INTEGER NOT NULL DEFAULT 1,
+        last_used_at TEXT NOT NULL DEFAULT (datetime('now')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        promoted_to_rule_id TEXT REFERENCES paste_rules(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_learned_app ON learned_patterns(target_app);
+    CREATE INDEX IF NOT EXISTS idx_learned_freq ON learned_patterns(frequency DESC);",
 ];
 
 #[cfg(test)]

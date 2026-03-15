@@ -140,6 +140,19 @@ export interface AutoPasteEvent {
   pastedAt: string;
 }
 
+export interface LearnedPattern {
+  id: string;
+  contentType: string;
+  targetApp?: string;
+  targetWindowTitle?: string;
+  screenContext?: string;
+  itemId?: string;
+  frequency: number;
+  lastUsedAt: string;
+  createdAt: string;
+  promotedToRuleId?: string;
+}
+
 // Content type display configuration
 export const CONTENT_TYPE_CONFIG: Record<
   ContentType,

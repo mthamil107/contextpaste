@@ -94,16 +94,25 @@ function App() {
     applyTheme();
   }, [settings.theme]);
 
-  // Listen for tray navigation events
+  // Listen for shortcut and tray navigation events
   useEffect(() => {
+    const unlistenQuickPaste = listen("shortcut:quick-paste", () => {
+      showOverlay();
+      setView("quick-paste");
+    });
+    const unlistenHistoryShortcut = listen("shortcut:history", () => {
+      setView("history");
+    });
     const unlistenHistory = listen("nav:history", () => setView("history"));
     const unlistenSettings = listen("nav:settings", () => setView("settings"));
 
     return () => {
+      unlistenQuickPaste.then((fn) => fn());
+      unlistenHistoryShortcut.then((fn) => fn());
       unlistenHistory.then((fn) => fn());
       unlistenSettings.then((fn) => fn());
     };
-  }, [setView]);
+  }, [setView, showOverlay]);
 
   return (
     <div className="flex h-screen w-screen flex-col bg-cp-surface" data-testid="app-container">

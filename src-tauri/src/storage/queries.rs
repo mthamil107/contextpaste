@@ -910,6 +910,178 @@ fn row_to_clip_item(row: &rusqlite::Row) -> rusqlite::Result<ClipItem> {
     })
 }
 
+// ─── Learned Patterns ───
+
+use crate::storage::models::LearnedPattern;
+
+/// Record a learned pattern from a manual paste.
+/// If a similar pattern exists (same content_type + target_app), increment frequency.
+pub fn record_learned_pattern(
+    db: &DbPool,
+    content_type: &str,
+    target_app: Option<&str>,
+    target_window_title: Option<&str>,
+    screen_context: Option<&str>,
+    item_id: &str,
+) -> Result<(), String> {
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+
+    // Check if a similar pattern already exists (same type + app)
+    let existing_id: Option<String> = conn
+        .query_row(
+            "SELECT id FROM learned_patterns WHERE content_type = ?1 AND target_app = ?2 LIMIT 1",
+            params![content_type, target_app],
+            |row| row.get(0),
+        )
+        .ok();
+
+    if let Some(id) = existing_id {
+        // Update existing: increment frequency, update context and item
+        conn.execute(
+            "UPDATE learned_patterns SET frequency = frequency + 1, last_used_at = datetime('now'), \
+             screen_context = COALESCE(?2, screen_context), item_id = ?3 WHERE id = ?1",
+            params![id, screen_context, item_id],
+        )
+        .map_err(|e| format!("Failed to update learned pattern: {}", e))?;
+    } else {
+        // Insert new pattern
+        let id = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO learned_patterns (id, content_type, target_app, target_window_title, screen_context, item_id) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, content_type, target_app, target_window_title, screen_context, item_id],
+        )
+        .map_err(|e| format!("Failed to insert learned pattern: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// Get all learned patterns, sorted by frequency descending.
+pub fn get_learned_patterns(db: &DbPool, limit: u32) -> Result<Vec<LearnedPattern>, String> {
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, content_type, target_app, target_window_title, screen_context, \
+             item_id, frequency, last_used_at, created_at, promoted_to_rule_id \
+             FROM learned_patterns WHERE promoted_to_rule_id IS NULL \
+             ORDER BY frequency DESC LIMIT ?1",
+        )
+        .map_err(|e| format!("Failed to prepare: {}", e))?;
+
+    let patterns = stmt
+        .query_map(params![limit], |row| {
+            Ok(LearnedPattern {
+                id: row.get(0)?,
+                content_type: row.get(1)?,
+                target_app: row.get(2)?,
+                target_window_title: row.get(3)?,
+                screen_context: row.get(4)?,
+                item_id: row.get(5)?,
+                frequency: row.get(6)?,
+                last_used_at: row.get(7)?,
+                created_at: row.get(8)?,
+                promoted_to_rule_id: row.get(9)?,
+            })
+        })
+        .map_err(|e| format!("Failed to query: {}", e))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(patterns)
+}
+
+/// Promote a learned pattern to a paste rule.
+pub fn promote_pattern_to_rule(db: &DbPool, pattern_id: &str) -> Result<String, String> {
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+
+    // Get the pattern
+    let pattern = conn.query_row(
+        "SELECT content_type, target_app, screen_context FROM learned_patterns WHERE id = ?1",
+        params![pattern_id],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?, row.get::<_, Option<String>>(2)?)),
+    ).map_err(|e| format!("Pattern not found: {}", e))?;
+
+    let (content_type, target_app, screen_context) = pattern;
+
+    // Create a rule from the pattern
+    let rule_id = uuid::Uuid::new_v4().to_string();
+    let rule_name = format!("Auto: {} in {}", content_type, target_app.as_deref().unwrap_or("any app"));
+
+    // Build context pattern from the screen context (escape regex special chars, use keywords)
+    let context_pattern = screen_context
+        .as_deref()
+        .map(|ctx| {
+            // Extract significant words (>3 chars) and join with |
+            ctx.split_whitespace()
+                .filter(|w| w.len() > 3)
+                .map(|w| regex::escape(w))
+                .take(5)
+                .collect::<Vec<_>>()
+                .join("|")
+        })
+        .filter(|s| !s.is_empty());
+
+    let app_pattern = target_app.as_deref().map(|a| regex::escape(a));
+
+    conn.execute(
+        "INSERT INTO paste_rules (id, name, priority, enabled, app_pattern, context_pattern, action_type, action_value) \
+         VALUES (?1, ?2, 0, 1, ?3, ?4, 'paste_recent_type', ?5)",
+        params![rule_id, rule_name, app_pattern, context_pattern, content_type],
+    )
+    .map_err(|e| format!("Failed to create rule: {}", e))?;
+
+    // Mark pattern as promoted
+    conn.execute(
+        "UPDATE learned_patterns SET promoted_to_rule_id = ?2 WHERE id = ?1",
+        params![pattern_id, rule_id],
+    )
+    .map_err(|e| format!("Failed to mark pattern: {}", e))?;
+
+    Ok(rule_id)
+}
+
+/// Delete a learned pattern.
+pub fn delete_learned_pattern(db: &DbPool, id: &str) -> Result<(), String> {
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+    conn.execute("DELETE FROM learned_patterns WHERE id = ?1", params![id])
+        .map_err(|e| format!("Failed to delete: {}", e))?;
+    Ok(())
+}
+
+/// Find a matching learned pattern for auto-paste scoring.
+pub fn find_matching_pattern(db: &DbPool, content_type: &str, target_app: Option<&str>) -> Result<Option<LearnedPattern>, String> {
+    let conn = db.lock().map_err(|e| format!("DB lock error: {}", e))?;
+    let result = conn.query_row(
+        "SELECT id, content_type, target_app, target_window_title, screen_context, \
+         item_id, frequency, last_used_at, created_at, promoted_to_rule_id \
+         FROM learned_patterns \
+         WHERE content_type = ?1 AND target_app = ?2 AND promoted_to_rule_id IS NULL \
+         ORDER BY frequency DESC LIMIT 1",
+        params![content_type, target_app],
+        |row| {
+            Ok(LearnedPattern {
+                id: row.get(0)?,
+                content_type: row.get(1)?,
+                target_app: row.get(2)?,
+                target_window_title: row.get(3)?,
+                screen_context: row.get(4)?,
+                item_id: row.get(5)?,
+                frequency: row.get(6)?,
+                last_used_at: row.get(7)?,
+                created_at: row.get(8)?,
+                promoted_to_rule_id: row.get(9)?,
+            })
+        },
+    );
+
+    match result {
+        Ok(p) => Ok(Some(p)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(format!("Failed to find pattern: {}", e)),
+    }
+}
+
 fn row_to_paste_rule(row: &rusqlite::Row) -> rusqlite::Result<PasteRule> {
     Ok(PasteRule {
         id: row.get(0)?,

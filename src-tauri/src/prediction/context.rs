@@ -52,6 +52,9 @@ Write-Output "$proc`n$title"
 
     let output = std::process::Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", ps_script])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .output();
 
     match output {

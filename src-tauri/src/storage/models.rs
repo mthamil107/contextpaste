@@ -185,3 +185,18 @@ pub struct AutoPasteEvent {
     pub target_window_title: Option<String>,
     pub pasted_at: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LearnedPattern {
+    pub id: String,
+    pub content_type: String,
+    pub target_app: Option<String>,
+    pub target_window_title: Option<String>,
+    pub screen_context: Option<String>,
+    pub item_id: Option<String>,
+    pub frequency: i64,
+    pub last_used_at: String,
+    pub created_at: String,
+    pub promoted_to_rule_id: Option<String>,
+}
