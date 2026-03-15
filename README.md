@@ -127,6 +127,66 @@ Search your clipboard history by meaning instead of exact text. Enable in **Sett
 - "the AWS key I copied this morning" instead of `AKIA...`
 - "docker command to restart services" instead of `docker compose restart`
 
+### Context-Aware Auto-Paste
+
+The killer feature. Enable in **Settings > Auto-Paste**.
+
+When you press `Ctrl+Shift+V`, ContextPaste reads the screen to figure out what to paste:
+
+```
+Terminal:
+  $ git push origin main
+  Username: _                ← reads "Username" → pastes your git username
+  Password: _                ← reads "Password" → pastes your git token
+
+  $ docker login
+  Token: _                   ← reads "docker" + "Token" → pastes docker token
+```
+
+**How it works:**
+1. Reads the focused UI element text (via Windows UI Automation)
+2. Extracts keywords and infers expected content type
+3. Scores all clipboard items against that context (5-signal scoring)
+4. If confidence ≥ threshold → auto-pastes and shows a toast notification
+5. If confidence < threshold → falls back to the normal overlay
+
+**Scoring signals:**
+
+| Signal | Weight | Example |
+|--------|--------|---------|
+| Content type match | 40% | Screen says "token" → boosts Credential items |
+| Keyword overlap | 20% | Words from screen prompt found in item content |
+| Recency | 20% | Newer items score higher (1-hour decay curve) |
+| Pin/star boost | 15% | Pinned and starred items get priority |
+| Cross-app affinity | 5% | Items from different apps get a small boost |
+
+**Safety:**
+- Credentials are **never** auto-pasted — always shows the overlay for sensitive items
+- Low confidence falls back to manual selection — no guessing
+- Feature is **opt-in** (disabled by default)
+
+### Paste Rules
+
+Create custom rules in **Settings > Auto-Paste > Paste Rules** for predictable scenarios:
+
+**Example rules:**
+
+| Rule Name | App Pattern | Context Pattern | Action |
+|-----------|------------|-----------------|--------|
+| Git Token | `Terminal\|cmd\|powershell` | `password\|token\|credential` | Paste most recent Credential |
+| Docker Login | `Docker\|Terminal` | `docker.*token\|docker.*login` | Paste most recent Credential |
+| DB Connection | `DBeaver\|pgAdmin` | `connection\|connect\|jdbc` | Paste most recent ConnectionString |
+| API Endpoint | `Postman\|Insomnia` | `url\|endpoint\|base.*url` | Paste most recent Url |
+
+Rules use **regex patterns** and support:
+- **App pattern** — match against the application name
+- **Window title pattern** — match against the window title
+- **Context pattern** — match against the text the app is asking for
+- **Content type filter** — match against specific content types
+- **Priority ordering** — higher priority rules are checked first
+- **Enable/disable toggle** — temporarily disable rules without deleting
+- **Trigger tracking** — see how many times each rule has been used
+
 ### Settings
 
 Access via system tray > Settings, or click "Settings" in the nav bar:
@@ -136,7 +196,8 @@ Access via system tray > Settings, or click "Settings" in the nav bar:
 | **General** | Max history (default 5000), theme (system/light/dark), overlay position (cursor/center/top-right), overlay max items, dedup toggle, type badges, source context |
 | **Shortcuts** | View current hotkey bindings (Ctrl+Shift+V, Ctrl+Shift+H) |
 | **Security** | Credential auto-expire duration (1-1440 min), clear expired credentials, clear all history |
-| **AI** | Enable/disable predictions, AI provider selection (local/OpenAI/Anthropic/Ollama), semantic search toggle |
+| **AI** | Enable/disable predictions, AI provider selection (local/OpenAI/Ollama), semantic search toggle |
+| **Auto-Paste** | Enable/disable auto-paste, confidence threshold slider (50-95%), toast notifications, paste rules manager |
 
 ### System Tray
 
@@ -324,6 +385,36 @@ score = pin_boost * 100           // Pinned items always on top
 
 ---
 
+### Phase 4 — Context-Aware Auto-Paste
+
+#### Screen Context Reading (Windows UI Automation)
+- **Reads focused element** — Uses PowerShell + .NET `UIAutomationClient` to read the Name and Value of the currently focused UI element
+- **Password-safe** — Never reads content from password fields
+- **Fallback** — If UI Automation fails, uses window title as context
+- **Cross-platform stub** — Non-Windows platforms fall back to window title only
+
+#### Auto-Paste Pipeline
+- **5-signal scoring** — Content type match (40%), keyword overlap (20%), recency (20%), pin/star boost (15%), cross-app affinity (5%)
+- **Keyword inference** — Maps screen text keywords to expected ContentType (e.g., "token" → Credential, "url" → Url, "database" → ConnectionString)
+- **Confidence gate** — Configurable threshold (default 75%) determines auto-paste vs overlay fallback
+- **Credential safety** — Credentials are never auto-pasted regardless of confidence score
+- **Toast notification** — Shows "Auto-pasted: [preview] (85%)" for 3 seconds after successful auto-paste
+
+#### Paste Rules Engine
+- **Regex-based matching** — User-defined rules with regex patterns for app name, window title, and screen context
+- **AND logic** — All non-null conditions must match for a rule to trigger
+- **Priority ordering** — Rules checked in priority order (highest first)
+- **Action types** — "Paste most recent by type" or "Paste specific item"
+- **CRUD management** — Create, edit, delete, enable/disable rules via Settings > Auto-Paste
+- **Trigger tracking** — Each rule tracks how many times it has been used
+
+#### Database Support
+- **paste_rules table** — Stores rule definitions with patterns, actions, and metadata
+- **auto_paste_events table** — Tracks auto-paste decisions for future confidence calibration
+- **Migration v3** — Automatic schema upgrade on first launch
+
+---
+
 ## Keyboard Shortcuts
 
 | Action | Windows/Linux | macOS |
@@ -344,9 +435,9 @@ score = pin_boost * 100           // Pinned items always on top
 
 | Platform | Download | Size |
 |----------|----------|------|
-| Windows (installer, NSIS) | [ContextPaste_0.1.0_x64-setup.exe](https://github.com/mthamil107/contextpaste/releases/latest) | ~82MB |
-| Windows (installer, MSI) | [ContextPaste_0.1.0_x64_en-US.msi](https://github.com/mthamil107/contextpaste/releases/latest) | ~85MB |
-| Windows (portable) | [ContextPaste-portable.exe](https://github.com/mthamil107/contextpaste/releases/latest) | ~15MB |
+| Windows (installer, NSIS) | [ContextPaste_0.3.0_x64-setup.exe](https://github.com/mthamil107/contextpaste/releases/latest) | ~82MB |
+| Windows (installer, MSI) | [ContextPaste_0.3.0_x64_en-US.msi](https://github.com/mthamil107/contextpaste/releases/latest) | ~85MB |
+| Windows (portable) | [ContextPaste-0.3.0-portable.exe](https://github.com/mthamil107/contextpaste/releases/latest) | ~15MB |
 | macOS | Coming soon | — |
 | Linux (Debian/Ubuntu) | Coming soon | — |
 | Linux (AppImage) | Coming soon | — |
@@ -739,6 +830,35 @@ For features that require the full Tauri app (clipboard monitoring, global short
 3. Status should show "AI Ready" with all-MiniLM-L6-v2 model
 ```
 
+#### Auto-Paste (Phase 4)
+```
+1. Settings > Auto-Paste > enable "Enable auto-paste"
+2. Set confidence threshold to 50% (for easier testing)
+3. Copy a URL like https://example.com
+4. Open Notepad, type "Enter URL:" then place cursor after it
+5. Press Ctrl+Shift+V — should auto-paste the URL with toast notification
+6. Copy a credential (ghp_abc...) — verify it shows overlay instead of auto-pasting
+7. Create a paste rule:
+   - Name: "Test Rule"
+   - App pattern: notepad
+   - Context pattern: password|token
+   - Action: Paste most recent Credential
+8. In Notepad, type "Enter password:" and press Ctrl+Shift+V
+9. Verify the rule triggers and auto-pastes
+10. Check Settings > Auto-Paste — rule should show "Triggered 1 time"
+```
+
+#### Paste Rules Management
+```
+1. Settings > Auto-Paste > click "Add Rule"
+2. Fill in: Name, App pattern (regex), Context pattern (regex)
+3. Select action type and content type
+4. Click "Save Rule" — rule appears in the list
+5. Click toggle icon to disable/enable the rule
+6. Click trash icon to delete the rule
+7. Verify disabled rules don't trigger on Ctrl+Shift+V
+```
+
 #### Global Shortcuts
 ```
 1. Run `cargo tauri dev`
@@ -807,7 +927,11 @@ TAURI SHELL (Rust)
 ├── Credential Detector (10 patterns + masking)
 ├── Prediction Engine (6-factor scoring)
 ├── Workflow Tracker (sliding window chain detection)
-├── SQLite Store (WAL, FTS5, migrations)
+├── Context-Aware Auto-Paste
+│   ├── Screen Context Reader (Windows UI Automation via PowerShell)
+│   ├── Auto-Paste Pipeline (5-signal scoring with confidence gate)
+│   └── Paste Rules Engine (regex-based rule matching)
+├── SQLite Store (WAL, FTS5, 3 schema migrations)
 ├── Global Shortcut Handler (Ctrl+Shift+V/H)
 ├── Credential Auto-Expiry Timer (60s interval)
 ├── AI Embedding Pipeline
@@ -820,8 +944,10 @@ TAURI SHELL (Rust)
 
 REACT FRONTEND (WebView via IPC)
 ├── Quick Paste Overlay (420px, keyboard nav)
+├── Auto-Paste Toast (confidence notification)
 ├── History Browser (search + filters + detail)
-├── Settings Panel (4 tabs, incl. AI provider config)
+├── Settings Panel (5 tabs: General, Shortcuts, Security, AI, Auto-Paste)
+├── Paste Rules Manager (CRUD with regex patterns)
 ├── Zustand Stores (clipboard, settings, UI)
 └── Tauri IPC Wrappers (typed, centralized)
 ```
@@ -833,7 +959,8 @@ REACT FRONTEND (WebView via IPC)
 - [x] **Phase 1** — Core MVP (clipboard, classification, credentials, storage, UI)
 - [x] **Phase 2** — Intelligence (predictions, paste tracking, workflow chains, ghost paste)
 - [x] **Phase 3** — AI (ONNX embeddings, semantic search, BYOK, hybrid search)
-- [ ] **Phase 4** — Launch (CI/CD, auto-updater, performance optimization)
+- [x] **Phase 4** — Context-Aware Auto-Paste (screen reading, paste rules, confidence scoring)
+- [ ] **Phase 5** — Launch (CI/CD, auto-updater, performance optimization, macOS/Linux builds)
 
 ---
 
