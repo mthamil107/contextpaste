@@ -10,6 +10,7 @@ import {
   pasteItem as pasteItemApi,
   clearHistory as clearHistoryApi,
   getPredictions,
+  getContextPredictions,
 } from "../lib/tauri";
 
 interface ClipboardState {
@@ -20,7 +21,8 @@ interface ClipboardState {
 
   // Actions
   fetchItems: (limit?: number, offset?: number) => Promise<void>;
-  fetchPredictions: (limit?: number) => Promise<void>;
+  fetchPredictions: (limit?: number, targetApp?: string) => Promise<void>;
+  fetchContextPredictions: (screenText: string, limit?: number) => Promise<void>;
   addItem: (item: ClipItem) => void;
   removeItem: (id: string) => Promise<void>;
   togglePin: (id: string) => Promise<void>;
@@ -45,9 +47,18 @@ export const useClipboardStore = create<ClipboardState>((set) => ({
     }
   },
 
-  fetchPredictions: async (limit = 8) => {
+  fetchPredictions: async (limit = 8, targetApp?: string) => {
     try {
-      const predictions = await getPredictions(limit);
+      const predictions = await getPredictions(limit, targetApp);
+      set({ predictions });
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
+
+  fetchContextPredictions: async (screenText: string, limit = 8) => {
+    try {
+      const predictions = await getContextPredictions(screenText, limit);
       set({ predictions });
     } catch (e) {
       set({ error: String(e) });

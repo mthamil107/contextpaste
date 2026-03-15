@@ -127,42 +127,85 @@ Search your clipboard history by meaning instead of exact text. Enable in **Sett
 - "the AWS key I copied this morning" instead of `AKIA...`
 - "docker command to restart services" instead of `docker compose restart`
 
-### Context-Aware Auto-Paste
+### Context-Aware Smart Paste (The Killer Feature)
 
-The killer feature. Enable in **Settings > Auto-Paste**.
+When you press `Ctrl+Shift+V`, ContextPaste uses **3 intelligence layers** to bring the right item to the top:
 
-When you press `Ctrl+Shift+V`, ContextPaste reads the screen to figure out what to paste:
+#### Layer 1: OCR Screen Reading
+Takes a screenshot near your cursor, runs Windows built-in OCR, and reads what the app is asking for:
 
 ```
-Terminal:
-  $ git push origin main
-  Username: _                ← reads "Username" → pastes your git username
-  Password: _                ← reads "Password" → pastes your git token
-
-  $ docker login
-  Token: _                   ← reads "docker" + "Token" → pastes docker token
+Terminal shows: "GitHub Username:"     → OCR reads "Username"  → PlainText items ranked first
+Terminal shows: "Access Token:"        → OCR reads "Token"     → Credential items ranked first
+Terminal shows: "Docker Hub password:" → OCR reads "password"  → Credential items ranked first
 ```
 
-**How it works:**
-1. Reads the focused UI element text (via Windows UI Automation)
-2. Extracts keywords and infers expected content type
-3. Scores all clipboard items against that context (5-signal scoring)
-4. If confidence ≥ threshold → auto-pastes and shows a toast notification
-5. If confidence < threshold → falls back to the normal overlay
+**Real OCR captures from testing** (actual log output):
+```
+OCR: "Enter Docker Hub oas sword/ token :"  → matched Credential → score 377.9
+OCR: "GitHub Username: mthami1107"          → matched PlainText  → score 390.6
+OCR: "remote: Invalid username or token"    → matched PlainText  → score 390.6
+```
 
-**Scoring signals:**
+The OCR runs in a **background thread** (~1 second) — the overlay shows instantly, then re-ranks items when OCR completes.
 
-| Signal | Weight | Example |
-|--------|--------|---------|
-| Content type match | 40% | Screen says "token" → boosts Credential items |
-| Keyword overlap | 20% | Words from screen prompt found in item content |
-| Recency | 20% | Newer items score higher (1-hour decay curve) |
-| Pin/star boost | 15% | Pinned and starred items get priority |
-| Cross-app affinity | 5% | Items from different apps get a small boost |
+#### Layer 2: Paste Sequence Tracking
+Learns the ORDER you paste things. If you always paste `mthamil107` then `ghp_token`, after pasting username the token automatically moves to position #1:
+
+```
+Paste #1: mthamil107 (Username)
+  → System records: "after mthamil107, user pasted ghp_token"
+
+Next Ctrl+Shift+V:
+  → System checks last paste was mthamil107
+  → Boosts ghp_token to top (+200 score)
+  → Token is at position #1, just press Enter
+```
+
+This works for ANY repeating workflow — deploy scripts, form filling, configuration sequences.
+
+#### Layer 3: Frequency-Based Ranking
+Items you paste frequently rank higher than items you just copied once:
+
+```
+mthamil107  (11 pastes) → score: 66.0 (frequency)
+ghp_token   (3 pastes)  → score: 18.0 (frequency)
+random text (0 pastes)  → score: 0.0  (frequency)
+```
+
+Frequency weight is 60% of the base score — much stronger than recency (20%).
+
+#### Combined Scoring (all layers together)
+
+| Signal | Weight | Description |
+|--------|--------|-------------|
+| **Sequence boost** | +200 | "You always paste B after A" — strongest signal |
+| **OCR screen match** | +150 | Screen says "token" → boosts Credential items |
+| **Pinned items** | +100 | User-pinned items always near top |
+| **Content word match** | +80 | Screen text words found in item content |
+| **Paste frequency** | ×0.6 | Items pasted many times score higher |
+| **Recency** | ×0.2 | Newer items get a smaller boost |
+| **Starred items** | +10 | User-starred items get a small boost |
+
+#### How to Use
+
+1. **First time**: Just use `Ctrl+Shift+V` → arrow to select → `Enter` to paste
+2. **After a few uses**: Items you paste often will automatically rank higher
+3. **After pasting in sequence**: The next item in your workflow moves to #1
+4. **OCR context**: If the screen says "password" or "token", credentials rank first automatically
+
+No configuration needed — it learns from your behavior.
+
+#### Enable Auto-Paste (Optional)
+
+For fully automatic pasting when confidence is high:
+1. Settings > Auto-Paste > Enable auto-paste ON
+2. Set confidence threshold (default 75%)
+3. When confident → pastes directly + shows toast notification
+4. When not confident → shows overlay for manual selection
 
 **Safety:**
-- Credentials are **never** auto-pasted — always shows the overlay for sensitive items
-- Low confidence falls back to manual selection — no guessing
+- Low confidence always falls back to the overlay — no guessing
 - Feature is **opt-in** (disabled by default)
 
 ### Paste Rules
@@ -385,20 +428,31 @@ score = pin_boost * 100           // Pinned items always on top
 
 ---
 
-### Phase 4 — Context-Aware Auto-Paste
+### Phase 4 — Context-Aware Smart Paste
 
-#### Screen Context Reading (Windows UI Automation)
-- **Reads focused element** — Uses PowerShell + .NET `UIAutomationClient` to read the Name and Value of the currently focused UI element
-- **Password-safe** — Never reads content from password fields
-- **Fallback** — If UI Automation fails, uses window title as context
+#### OCR Screen Reading
+- **Windows built-in OCR** — Captures a 600×100px screenshot near the cursor, runs `Windows.Media.Ocr` via PowerShell to extract text
+- **Works for terminals** — Unlike UI Automation, OCR reads actual pixel text from any app including PowerShell, cmd, Windows Terminal, SSH sessions
+- **Non-blocking** — OCR runs in a background thread (~1 second). Overlay shows instantly, then re-ranks when OCR completes
+- **Fallback chain** — OCR → UI Automation → window title
 - **Cross-platform stub** — Non-Windows platforms fall back to window title only
 
-#### Auto-Paste Pipeline
-- **5-signal scoring** — Content type match (40%), keyword overlap (20%), recency (20%), pin/star boost (15%), cross-app affinity (5%)
-- **Keyword inference** — Maps screen text keywords to expected ContentType (e.g., "token" → Credential, "url" → Url, "database" → ConnectionString)
-- **Confidence gate** — Configurable threshold (default 75%) determines auto-paste vs overlay fallback
-- **Credential safety** — Credentials are never auto-pasted regardless of confidence score
-- **Toast notification** — Shows "Auto-pasted: [preview] (85%)" for 3 seconds after successful auto-paste
+#### Paste Sequence Tracking
+- **Learns paste order** — Records which item was pasted immediately after the current item across all paste events
+- **Automatic boost** — After pasting item A, item B (most frequently pasted next) gets +200 score boost
+- **SQL-based detection** — Uses rowid-based join to find the immediately next paste event after each occurrence
+- **Works for any workflow** — Deploy scripts, form filling, configuration sequences
+
+#### Frequency-Weighted Prediction Engine
+- **Paste count × 10** — Each paste multiplies the frequency score by 10 (capped at 100)
+- **60% weight** — Frequency is the strongest base signal, dominating over recency (20%)
+- **Items pasted 5+ times** always rank above items just copied once
+
+#### Context-Aware Re-Ranking
+- **Keyword to content type** — Screen text "token/password/secret" → Credential, "username/login" → PlainText, "url/endpoint" → Url, etc.
+- **10 keyword groups** mapped to content types (PlainText, Credential, Url, Email, IpAddress, Json, Sql, ShellCommand, FilePath, ConnectionString)
+- **Direct content matching** — Words from the OCR text found in clipboard item content boost that item
+- **Combined scoring** — Sequence (+200), OCR match (+150), pin (+100), content match (+80), frequency (×0.6), recency (×0.2)
 
 #### Paste Rules Engine
 - **Regex-based matching** — User-defined rules with regex patterns for app name, window title, and screen context
@@ -408,10 +462,23 @@ score = pin_boost * 100           // Pinned items always on top
 - **CRUD management** — Create, edit, delete, enable/disable rules via Settings > Auto-Paste
 - **Trigger tracking** — Each rule tracks how many times it has been used
 
+#### Learned Paste Patterns
+- **Records every manual paste** — Captures WHERE (app, window, OCR text) + WHAT (content type, item)
+- **Frequency tracking** — Patterns used multiple times rank higher for auto-paste
+- **Promote to rules** — "Make Rule" button auto-creates a paste rule from a learned pattern
+- **Settings UI** — View, promote, or delete learned patterns in Settings > Auto-Paste
+
 #### Database Support
 - **paste_rules table** — Stores rule definitions with patterns, actions, and metadata
-- **auto_paste_events table** — Tracks auto-paste decisions for future confidence calibration
-- **Migration v3** — Automatic schema upgrade on first launch
+- **auto_paste_events table** — Tracks auto-paste decisions for confidence calibration
+- **learned_patterns table** — Records WHERE + WHAT for every manual paste
+- **Migrations v3 + v4** — Automatic schema upgrade on first launch
+
+#### Credentials Persist
+- **No auto-expiry** — Credentials stay in history like normal items for easy re-use
+- **Masked display** — Content shown as `ghp_••••••••wxyz` in the UI
+- **Red "Secret" badge** — Visual indicator for credential items
+- **Never auto-pasted** — Always shows overlay for credentials (safety)
 
 ---
 
@@ -927,10 +994,12 @@ TAURI SHELL (Rust)
 ├── Credential Detector (10 patterns + masking)
 ├── Prediction Engine (6-factor scoring)
 ├── Workflow Tracker (sliding window chain detection)
-├── Context-Aware Auto-Paste
-│   ├── Screen Context Reader (Windows UI Automation via PowerShell)
-│   ├── Auto-Paste Pipeline (5-signal scoring with confidence gate)
-│   └── Paste Rules Engine (regex-based rule matching)
+├── Context-Aware Smart Paste
+│   ├── OCR Screen Reader (Windows.Media.Ocr, 600×100px near cursor)
+│   ├── Paste Sequence Tracker (learns paste order, +200 boost)
+│   ├── Context Re-Ranker (keyword→type matching, 10 keyword groups)
+│   ├── Paste Rules Engine (regex-based rule matching)
+│   └── Learned Patterns (records WHERE+WHAT, auto-rule creation)
 ├── SQLite Store (WAL, FTS5, 3 schema migrations)
 ├── Global Shortcut Handler (Ctrl+Shift+V/H)
 ├── Credential Auto-Expiry Timer (60s interval)

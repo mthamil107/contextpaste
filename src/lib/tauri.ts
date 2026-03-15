@@ -65,8 +65,16 @@ export async function clearExpiredCredentials(): Promise<void> {
 
 export async function getPredictions(
   limit: number = 8,
+  targetApp?: string,
 ): Promise<RankedItem[]> {
-  return invoke<RankedItem[]>("get_predictions", { limit });
+  return invoke<RankedItem[]>("get_predictions", { limit, targetApp: targetApp ?? null });
+}
+
+export async function getContextPredictions(
+  screenText: string,
+  limit: number = 8,
+): Promise<RankedItem[]> {
+  return invoke<RankedItem[]>("get_context_predictions", { screenText, limit });
 }
 
 // ============================================================

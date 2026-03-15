@@ -25,6 +25,16 @@ const KEYWORD_MAP: &[(&[&str], &str)] = &[
     (&["connection string", "dsn", "jdbc", "connect", "database url"], "ConnectionString"),
 ];
 
+/// Attempt context-aware auto-paste with a pre-captured screen context.
+/// Use this when the screen context was captured before showing the overlay.
+pub fn try_auto_paste_with_context(
+    db: &DbPool,
+    threshold: f64,
+    screen: &crate::storage::models::ScreenContext,
+) -> Result<AutoPasteResult, String> {
+    try_auto_paste_inner(db, threshold, screen)
+}
+
 /// Attempt context-aware auto-paste.
 ///
 /// Reads the current screen context, evaluates paste rules, and if no rule matches,
@@ -38,6 +48,14 @@ pub fn try_auto_paste(
 ) -> Result<AutoPasteResult, String> {
     // Step 1: Read screen context
     let screen = context_reader::read_screen_context();
+    try_auto_paste_inner(db, threshold, &screen)
+}
+
+fn try_auto_paste_inner(
+    db: &DbPool,
+    threshold: f64,
+    screen: &crate::storage::models::ScreenContext,
+) -> Result<AutoPasteResult, String> {
     log::debug!(
         "Screen context: app={:?}, title={:?}, focused={:?}",
         screen.app_name,

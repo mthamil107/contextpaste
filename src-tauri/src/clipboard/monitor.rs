@@ -68,16 +68,9 @@ pub fn start_monitoring(
             let is_credential = cred_match.is_some();
             let credential_type = cred_match.as_ref().map(|m| m.credential_type.clone());
 
-            // Compute expiry for credentials
-            let expires_at = if is_credential {
-                Some(
-                    (chrono::Utc::now() + chrono::Duration::minutes(30))
-                        .format("%Y-%m-%d %H:%M:%S")
-                        .to_string(),
-                )
-            } else {
-                None
-            };
+            // Credentials persist like normal items — no auto-expiry
+            // They are shown masked in the UI but kept in history for re-use
+            let expires_at: Option<String> = None;
 
             let item = ClipItem {
                 id: uuid::Uuid::new_v4().to_string(),

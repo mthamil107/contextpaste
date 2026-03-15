@@ -102,6 +102,17 @@ pub fn rate_auto_paste(
     queries::rate_auto_paste(&db, &event_id, correct)
 }
 
+/// Get predictions re-ranked based on screen context text (from OCR).
+/// Matches screen text keywords against item content and content types.
+#[tauri::command]
+pub fn get_context_predictions(
+    db: State<'_, DbPool>,
+    screen_text: String,
+    limit: u32,
+) -> Result<Vec<RankedItem>, String> {
+    engine::get_context_predictions(&db, &screen_text, limit)
+}
+
 // Learned patterns commands
 
 #[tauri::command]

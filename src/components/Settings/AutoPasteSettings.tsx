@@ -221,19 +221,32 @@ export function AutoPasteSettings() {
             className="flex items-center justify-between rounded-lg border border-cp-border bg-cp-bg px-3 py-2 mb-2"
           >
             <div className="flex-1 min-w-0">
-              <p className={`text-sm font-medium truncate ${rule.enabled ? "text-cp-text" : "text-cp-muted line-through"}`}>
+              <p className={`text-sm font-medium ${rule.enabled ? "text-cp-text" : "text-cp-muted line-through"}`}>
                 {rule.name}
               </p>
-              <p className="text-[10px] text-cp-muted truncate">
-                {[
-                  rule.appPattern && `App: ${rule.appPattern}`,
-                  rule.contextPattern && `Context: ${rule.contextPattern}`,
-                  `→ ${rule.actionValue}`,
-                ].filter(Boolean).join(" | ")}
-              </p>
-              <p className="text-[10px] text-cp-muted">
-                Triggered {rule.timesTriggered} times
-              </p>
+              <div className="mt-1 space-y-0.5">
+                {rule.appPattern && (
+                  <p className="text-[10px] text-cp-muted">
+                    <span className="font-medium text-cp-text/70">App:</span> <code className="bg-cp-border/30 rounded px-1">{rule.appPattern}</code>
+                  </p>
+                )}
+                {rule.windowTitlePattern && (
+                  <p className="text-[10px] text-cp-muted">
+                    <span className="font-medium text-cp-text/70">Window:</span> <code className="bg-cp-border/30 rounded px-1">{rule.windowTitlePattern}</code>
+                  </p>
+                )}
+                {rule.contextPattern && (
+                  <p className="text-[10px] text-cp-muted">
+                    <span className="font-medium text-cp-text/70">Context:</span> <code className="bg-cp-border/30 rounded px-1">{rule.contextPattern}</code>
+                  </p>
+                )}
+                <p className="text-[10px] text-cp-muted">
+                  <span className="font-medium text-cp-text/70">Action:</span> {rule.actionType === "paste_recent_type" ? "Paste most recent" : "Paste specific"} → <span className="text-cp-accent font-medium">{rule.actionValue}</span>
+                </p>
+                <p className="text-[10px] text-cp-muted">
+                  Triggered {rule.timesTriggered} time{rule.timesTriggered !== 1 ? "s" : ""}{rule.lastTriggeredAt ? ` · Last: ${new Date(rule.lastTriggeredAt).toLocaleDateString()}` : ""}
+                </p>
+              </div>
             </div>
             <div className="flex items-center gap-1 ml-2">
               <button

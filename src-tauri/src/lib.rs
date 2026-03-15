@@ -57,6 +57,7 @@ pub fn run() {
             commands::prediction::get_workflow_chains,
             // Auto-paste commands
             commands::prediction::try_auto_paste_cmd,
+            commands::prediction::get_context_predictions,
             commands::prediction::get_paste_rules,
             commands::prediction::create_paste_rule,
             commands::prediction::update_paste_rule,
@@ -96,18 +97,31 @@ pub fn run() {
 
             // Register global shortcuts
             let handle = app.handle();
+            let shortcut_db = db.clone();
             handle
                 .global_shortcut()
-                .on_shortcut("ctrl+shift+v", |app, _shortcut, event| {
+                .on_shortcut("ctrl+shift+v", move |app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
-                        // ALWAYS show window + overlay immediately (never block)
+                        // Step 1: Show overlay INSTANTLY
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
-                        if let Err(e) = app.emit("shortcut:quick-paste", ()) {
-                            log::error!("Failed to emit quick-paste shortcut event: {}", e);
-                        }
+                        let _ = app.emit("shortcut:quick-paste", ());
+
+                        // Step 2: In background, OCR the screen near cursor
+                        // When done, re-rank items and update the overlay
+                        let bg_app = app.clone();
+                        let bg_db = shortcut_db.clone();
+                        std::thread::spawn(move || {
+                            let screen = prediction::context_reader::read_screen_context();
+                            log::info!("Screen OCR: app={:?}, focused={:?}",
+                                screen.app_name,
+                                screen.focused_text.as_deref().map(|s| &s[..s.len().min(80)]));
+
+                            // Emit screen context so frontend can re-rank with this info
+                            let _ = bg_app.emit("screen-context-ready", &screen);
+                        });
                     }
                 })
                 .map_err(|e| {

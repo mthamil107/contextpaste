@@ -3,8 +3,8 @@
 //
 // score = pin_boost * 100
 //       + chain_boost * 50
-//       + frequency_score * 0.4
-//       + recency_score * 0.3      // e^(-t/3600) decay, τ=1hour
+//       + frequency_score * 0.6    // paste_count * 10, capped at 100 — most important signal
+//       + recency_score * 0.2      // e^(-t/3600) decay, τ=1hour
 //       + type_match_score * 0.2
 //       + source_affinity * 0.1
 
@@ -39,6 +39,8 @@ impl TargetContext {
 
 /// Rank items for the quick paste overlay.
 /// When target_app is provided, type match and source affinity scores are included.
+/// Uses paste sequence tracking: if you just pasted item A, item B (which you usually
+/// paste after A) gets boosted to the top.
 pub fn get_predictions(
     db: &DbPool,
     limit: u32,
@@ -52,6 +54,9 @@ pub fn get_predictions(
         Some(app) if !app.is_empty() => Some(TargetContext::load(db, app)?),
         _ => None,
     };
+
+    // Find what was LAST pasted — so we can boost the "next in sequence" item
+    let next_in_sequence = find_next_in_sequence(db);
 
     // Preload source affinity scores for all unique source apps in one pass
     let source_affinities: HashMap<String, f64> = match &context {
@@ -76,8 +81,17 @@ pub fn get_predictions(
     let mut ranked: Vec<RankedItem> = items
         .into_iter()
         .map(|item| {
-            let (score, reason) =
+            let (mut score, mut reason) =
                 compute_score(&item, &now, context.as_ref(), &source_affinities);
+
+            // Sequence boost: if this item usually follows the last-pasted item, boost it to top
+            if let Some(ref next_id) = next_in_sequence {
+                if item.id == *next_id {
+                    score += 200.0; // Higher than pin boost (100) — sequence is the strongest signal
+                    reason = "next_in_sequence".to_string();
+                }
+            }
+
             RankedItem {
                 item,
                 score,
@@ -91,6 +105,159 @@ pub fn get_predictions(
     ranked.truncate(limit as usize);
 
     Ok(ranked)
+}
+
+/// Re-rank predictions based on screen context text (from OCR near cursor).
+/// This is called AFTER OCR completes and matches the screen text against items.
+///
+/// Example: screen shows "GitHub Username:" → ranks items containing "username"
+/// or items of type PlainText that have been pasted when similar text was on screen.
+pub fn get_context_predictions(
+    db: &DbPool,
+    screen_text: &str,
+    limit: u32,
+) -> Result<Vec<RankedItem>, String> {
+    let items = queries::get_recent_items(db, limit * 3, 0)?;
+    let screen_lower = screen_text.to_lowercase();
+
+    // Keyword to content type mapping
+    let keyword_types: &[(&[&str], &str)] = &[
+        (&["username", "user name", "user", "login", "account"], "PlainText"),
+        (&["password", "passwd", "secret", "token", "access token", "personal access", "api key", "apikey"], "Credential"),
+        (&["url", "link", "endpoint", "http", "https", "webhook"], "Url"),
+        (&["email", "e-mail", "mail"], "Email"),
+        (&["ip", "address", "host", "server"], "IpAddress"),
+        (&["json", "payload", "body"], "Json"),
+        (&["sql", "query", "select", "database"], "Sql"),
+        (&["command", "cmd", "run", "execute", "terminal", "shell", "bash"], "ShellCommand"),
+        (&["path", "file", "directory", "folder"], "FilePath"),
+        (&["connection", "connect", "dsn", "jdbc", "database url"], "ConnectionString"),
+    ];
+
+    // Find which content types the screen text suggests
+    let mut inferred_types: Vec<&str> = Vec::new();
+    for (keywords, content_type) in keyword_types {
+        for kw in *keywords {
+            if screen_lower.contains(kw) {
+                inferred_types.push(content_type);
+                break;
+            }
+        }
+    }
+
+    let now = chrono::Utc::now();
+    let next_in_seq = find_next_in_sequence(db);
+
+    let mut ranked: Vec<RankedItem> = items
+        .into_iter()
+        .map(|item| {
+            let mut score = 0.0_f64;
+            let mut reason = "default".to_string();
+
+            // Sequence boost (strongest signal)
+            if let Some(ref next_id) = next_in_seq {
+                if item.id == *next_id {
+                    score += 200.0;
+                    reason = "next_in_sequence".to_string();
+                }
+            }
+
+            // Context type match (very strong) — screen says "username" and item is PlainText
+            let type_str = item.content_type.as_str();
+            if inferred_types.contains(&type_str) {
+                score += 150.0;
+                reason = format!("screen_match:{}", type_str);
+            }
+
+            // Direct content match — screen text contains words from the item
+            let item_lower = item.content.to_lowercase();
+            let screen_words: Vec<&str> = screen_lower.split_whitespace()
+                .filter(|w| w.len() > 2)
+                .collect();
+            let mut word_matches = 0;
+            for word in &screen_words {
+                if item_lower.contains(word) {
+                    word_matches += 1;
+                }
+            }
+            if word_matches > 0 && !screen_words.is_empty() {
+                let match_ratio = word_matches as f64 / screen_words.len() as f64;
+                score += match_ratio * 80.0;
+                if reason == "default" {
+                    reason = "content_match".to_string();
+                }
+            }
+
+            // Frequency boost
+            let freq_score = (item.paste_count as f64 * 10.0).min(100.0);
+            score += freq_score * 0.4;
+
+            // Recency boost (smaller)
+            let created = chrono::NaiveDateTime::parse_from_str(&item.created_at, "%Y-%m-%d %H:%M:%S")
+                .unwrap_or_else(|_| now.naive_utc());
+            let age_secs = (now.naive_utc() - created).num_seconds().max(0) as f64;
+            let recency = (-age_secs / 3600.0).exp() * 100.0;
+            score += recency * 0.1;
+
+            // Pin boost
+            if item.is_pinned {
+                score += 100.0;
+            }
+
+            RankedItem { item, score, reason }
+        })
+        .collect();
+
+    ranked.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    ranked.truncate(limit as usize);
+
+    if let Some(first) = ranked.first() {
+        log::info!("Context prediction: top={} score={:.1} reason={}",
+            first.item.content.chars().take(30).collect::<String>(),
+            first.score, first.reason);
+    }
+
+    Ok(ranked)
+}
+
+/// Find the item that should be pasted NEXT based on paste sequence history.
+/// Looks at the most recent paste event, then finds which item was most frequently
+/// pasted immediately after that same item in the past.
+///
+/// Example: If you always paste "mthamil107" then "ghp_token", after pasting
+/// "mthamil107" this function returns the ID of "ghp_token".
+fn find_next_in_sequence(db: &DbPool) -> Option<String> {
+    let conn = db.lock().ok()?;
+
+    // Get the item that was just pasted (most recent paste event)
+    let last_pasted_id: String = conn.query_row(
+        "SELECT item_id FROM paste_events ORDER BY pasted_at DESC LIMIT 1",
+        [],
+        |row| row.get(0),
+    ).ok()?;
+
+    // Find which item was most frequently pasted RIGHT AFTER this item
+    // Uses rowid to find the immediately next paste event after each occurrence
+    let next_id: Option<String> = conn.query_row(
+        "SELECT p2.item_id
+         FROM paste_events p1
+         JOIN paste_events p2 ON p2.rowid = (
+             SELECT MIN(p3.rowid) FROM paste_events p3 WHERE p3.rowid > p1.rowid
+         )
+         WHERE p1.item_id = ?1
+         AND p2.item_id != ?1
+         GROUP BY p2.item_id
+         ORDER BY COUNT(*) DESC
+         LIMIT 1",
+        rusqlite::params![last_pasted_id],
+        |row| row.get(0),
+    ).ok();
+
+    if let Some(ref id) = next_id {
+        log::info!("Sequence prediction: after {} → next should be {}", last_pasted_id, id);
+    }
+
+    next_id
 }
 
 fn compute_score(
@@ -110,9 +277,10 @@ fn compute_score(
         top_component = 100.0;
     }
 
-    // Frequency score (normalized paste count)
-    let freq_score = (item.paste_count as f64).min(100.0) / 100.0 * 100.0;
-    let freq_contrib = freq_score * 0.4;
+    // Frequency score — items pasted many times get a STRONG boost
+    // 1 paste = 10, 3 pastes = 30, 5+ pastes = 50+
+    let freq_score = (item.paste_count as f64 * 10.0).min(100.0);
+    let freq_contrib = freq_score * 0.6;
     score += freq_contrib;
     if freq_contrib > top_component && !item.is_pinned {
         top_component = freq_contrib;
@@ -124,7 +292,7 @@ fn compute_score(
         .unwrap_or_else(|_| now.naive_utc());
     let age_seconds = (now.naive_utc() - created).num_seconds().max(0) as f64;
     let recency_score = (-age_seconds / 3600.0).exp() * 100.0;
-    let recency_contrib = recency_score * 0.3;
+    let recency_contrib = recency_score * 0.2;
     score += recency_contrib;
     if recency_contrib > top_component && !item.is_pinned {
         top_component = recency_contrib;

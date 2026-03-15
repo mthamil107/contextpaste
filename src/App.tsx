@@ -6,6 +6,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useClipboard } from "./hooks/useClipboard";
 import { useSettings } from "./hooks/useSettings";
 import { useUIStore } from "./stores/uiStore";
+import { useClipboardStore } from "./stores/clipboardStore";
+import type { ScreenContext } from "./lib/types";
 import { QuickPasteOverlay } from "./components/QuickPaste/QuickPasteOverlay";
 import { HistoryPanel } from "./components/History/HistoryPanel";
 import { SettingsPanel } from "./components/Settings/SettingsPanel";
@@ -81,6 +83,7 @@ function App() {
   useClipboard();
   const { settings } = useSettings();
   const { currentView, setView, showOverlay } = useUIStore();
+  const { fetchPredictions } = useClipboardStore();
 
   // Apply theme on load
   useEffect(() => {
@@ -95,24 +98,40 @@ function App() {
   }, [settings.theme]);
 
   // Listen for shortcut and tray navigation events
+  const { hideOverlay } = useUIStore();
+  const { fetchContextPredictions } = useClipboardStore();
   useEffect(() => {
     const unlistenQuickPaste = listen("shortcut:quick-paste", () => {
+      fetchPredictions(8);
       showOverlay();
       setView("quick-paste");
     });
+    // When OCR screen reading completes, re-rank items based on what the screen shows
+    const unlistenScreenContext = listen<ScreenContext>("screen-context-ready", (event) => {
+      const ctx = event.payload;
+      const screenText = ctx.focusedText || ctx.windowTitle || "";
+      if (screenText.length > 0) {
+        fetchContextPredictions(screenText, 8);
+      }
+    });
     const unlistenHistoryShortcut = listen("shortcut:history", () => {
       setView("history");
+    });
+    const unlistenAutoHide = listen("autopaste:hide-overlay", () => {
+      hideOverlay();
     });
     const unlistenHistory = listen("nav:history", () => setView("history"));
     const unlistenSettings = listen("nav:settings", () => setView("settings"));
 
     return () => {
       unlistenQuickPaste.then((fn) => fn());
+      unlistenScreenContext.then((fn) => fn());
       unlistenHistoryShortcut.then((fn) => fn());
+      unlistenAutoHide.then((fn) => fn());
       unlistenHistory.then((fn) => fn());
       unlistenSettings.then((fn) => fn());
     };
-  }, [setView, showOverlay]);
+  }, [setView, showOverlay, hideOverlay]);
 
   return (
     <div className="flex h-screen w-screen flex-col bg-cp-surface" data-testid="app-container">
