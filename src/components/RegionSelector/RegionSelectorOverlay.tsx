@@ -34,8 +34,8 @@ export function RegionSelectorOverlay() {
     // Clear
     ctx.clearRect(0, 0, w, h);
 
-    // Dark overlay
-    ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
+    // Light semi-transparent overlay — just enough to see the screen through
+    ctx.fillStyle = "rgba(0, 0, 0, 0.15)";
     ctx.fillRect(0, 0, w, h);
 
     if (sel) {
