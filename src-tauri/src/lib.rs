@@ -77,6 +77,7 @@ pub fn run() {
             commands::ai::backfill_embeddings,
             // Screenshot + OCR commands
             commands::screenshot::capture_and_ocr_region,
+            commands::screenshot::capture_fullscreen,
         ])
         .setup(|app| {
             // Initialize database
@@ -120,34 +121,47 @@ pub fn run() {
                     ))
                 })?;
 
-            // Ctrl+Shift+B → SMART paste (region selector overlay for OCR)
+            // Ctrl+Shift+B → SMART paste (capture screen, then show region selector)
             handle
                 .global_shortcut()
                 .on_shortcut("ctrl+shift+b", |app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
-                        // Create or show the region selector overlay window
-                        let existing = app.get_webview_window("region-selector");
-                        if let Some(win) = existing {
-                            let _ = win.show();
-                            let _ = win.set_focus();
-                        } else {
-                            match tauri::WebviewWindowBuilder::new(
-                                app,
-                                "region-selector",
-                                tauri::WebviewUrl::App("index.html?mode=region-selector".into()),
-                            )
-                            .title("")
-                            .fullscreen(true)
-                            .transparent(true)
-                            .decorations(false)
-                            .always_on_top(true)
-                            .skip_taskbar(true)
-                            .build()
-                            {
-                                Ok(_) => log::info!("Region selector window created"),
-                                Err(e) => log::error!("Failed to create region selector: {}", e),
+                        // Step 1: Capture the full screen BEFORE showing overlay
+                        // (since WebView2 can't do true transparency)
+                        let bg_app = app.clone();
+                        std::thread::spawn(move || {
+                            match screenshot::capture::capture_fullscreen_base64() {
+                                Ok(b64) => {
+                                    // Emit screenshot data so the overlay can use it as background
+                                    let _ = bg_app.emit("screen-captured", b64);
+
+                                    // Create or show the region selector window
+                                    let existing = bg_app.get_webview_window("region-selector");
+                                    if let Some(win) = existing {
+                                        let _ = win.show();
+                                        let _ = win.set_focus();
+                                    } else {
+                                        match tauri::WebviewWindowBuilder::new(
+                                            &bg_app,
+                                            "region-selector",
+                                            tauri::WebviewUrl::App("index.html?mode=region-selector".into()),
+                                        )
+                                        .title("")
+                                        .fullscreen(true)
+                                        .transparent(false)
+                                        .decorations(false)
+                                        .always_on_top(true)
+                                        .skip_taskbar(true)
+                                        .build()
+                                        {
+                                            Ok(_) => log::info!("Region selector window created"),
+                                            Err(e) => log::error!("Failed to create region selector: {}", e),
+                                        }
+                                    }
+                                }
+                                Err(e) => log::error!("Screen capture failed: {}", e),
                             }
-                        }
+                        });
                     }
                 })
                 .map_err(|e| {

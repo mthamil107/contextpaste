@@ -5,7 +5,7 @@
 use tauri::State;
 
 use crate::prediction::engine;
-use crate::screenshot::ocr;
+use crate::screenshot::{capture, ocr};
 use crate::storage::database::DbPool;
 use crate::storage::models::RankedItem;
 
@@ -32,4 +32,11 @@ pub fn capture_and_ocr_region(
     let predictions = engine::get_context_predictions(&db, &text, 8)?;
 
     Ok((text, predictions))
+}
+
+/// Capture the full screen as base64 JPEG.
+/// Called before showing the region selector overlay so it can use the screenshot as background.
+#[tauri::command]
+pub fn capture_fullscreen() -> Result<String, String> {
+    capture::capture_fullscreen_base64()
 }

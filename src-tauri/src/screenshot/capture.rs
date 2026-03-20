@@ -47,6 +47,50 @@ Write-Output $tmp
     Ok(path)
 }
 
+/// Capture the full screen as a base64-encoded PNG.
+/// Used by the region selector to show the screen as background (since WebView2 doesn't support true transparency).
+#[cfg(target_os = "windows")]
+pub fn capture_fullscreen_base64() -> Result<String, String> {
+    let ps_script = r#"
+Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName System.Windows.Forms
+
+$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+$bmp = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+$g = [System.Drawing.Graphics]::FromImage($bmp)
+$g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+$g.Dispose()
+
+$ms = New-Object System.IO.MemoryStream
+$bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Jpeg)
+$bmp.Dispose()
+$bytes = $ms.ToArray()
+$ms.Dispose()
+
+Write-Output ([Convert]::ToBase64String($bytes))
+"#;
+
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", ps_script])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| format!("Fullscreen capture failed: {}", e))?;
+
+    let b64 = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if b64.is_empty() {
+        return Err("Fullscreen capture returned empty".to_string());
+    }
+
+    Ok(b64)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn capture_fullscreen_base64() -> Result<String, String> {
+    Err("Screen capture not supported on this platform".to_string())
+}
+
 #[cfg(not(target_os = "windows"))]
 pub fn capture_region_to_file(_x: i32, _y: i32, _w: i32, _h: i32) -> Result<String, String> {
     Err("Screen capture not supported on this platform".to_string())
