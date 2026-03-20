@@ -2,6 +2,7 @@
 // Triggered by Ctrl+Shift+V. Uses cmdk-style keyboard navigation.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useClipboardStore } from "../../stores/clipboardStore";
 import { useUIStore } from "../../stores/uiStore";
 import { useSearch } from "../../hooks/useSearch";
@@ -12,6 +13,8 @@ import { ClipItemRow } from "./ClipItem";
 import { ChainIndicator } from "./ChainIndicator";
 import { Kbd } from "../shared/Kbd";
 import { DEFAULTS } from "../../lib/constants";
+import type { ScreenContext } from "../../lib/types";
+import { Eye } from "lucide-react";
 
 export function QuickPasteOverlay() {
   const { items, predictions } = useClipboardStore();
@@ -29,6 +32,19 @@ export function QuickPasteOverlay() {
 
   // Ghost paste flash state: holds the id of the item being flashed
   const [flashId, setFlashId] = useState<string | null>(null);
+  // OCR screen context — shows what the screen reader captured
+  const [ocrText, setOcrText] = useState<string | null>(null);
+
+  // Listen for screen context from OCR (Ctrl+Shift+B)
+  useEffect(() => {
+    const unlisten = listen<ScreenContext>("screen-context-ready", (event) => {
+      const text = event.payload.focusedText || event.payload.windowTitle || null;
+      setOcrText(text);
+      // Auto-clear after 5 seconds
+      setTimeout(() => setOcrText(null), 5000);
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, []);
 
   // Listen for workflow chain events
   useEffect(() => {
@@ -85,7 +101,10 @@ export function QuickPasteOverlay() {
     onTab: () => handleGhostPaste(selectedIndex),
   });
 
-  if (!overlayVisible) return null;
+  if (!overlayVisible) {
+    if (ocrText) setOcrText(null);
+    return null;
+  }
 
   return (
     <div className="animate-fade-in fixed inset-0 z-50" data-testid="quick-paste-backdrop" onClick={hideOverlay}>
@@ -95,6 +114,16 @@ export function QuickPasteOverlay() {
         onClick={(e) => e.stopPropagation()}
       >
         <SearchBar value={query} onChange={setQuery} isSemanticActive={isSemanticActive} />
+
+        {/* OCR context banner — shows what the screen reader captured */}
+        {ocrText && (
+          <div className="flex items-center gap-2 border-b border-cp-accent/30 bg-cp-accent/10 px-3 py-1.5">
+            <Eye size={12} className="shrink-0 text-cp-accent" />
+            <p className="text-[11px] text-cp-accent truncate">
+              Screen: <span className="font-medium">{ocrText.length > 60 ? ocrText.slice(0, 60) + "..." : ocrText}</span>
+            </p>
+          </div>
+        )}
 
         {/* Chain indicator */}
         {activeChain && <ChainIndicator chain={activeChain} />}
@@ -106,8 +135,23 @@ export function QuickPasteOverlay() {
             </div>
           )}
 
-          {!searching && displayItems.length === 0 && (
-            <div className="px-3 py-8 text-center text-sm text-cp-muted" data-testid="quick-paste-empty">
+          {!searching && displayItems.length === 0 && predictions.length === 0 && (
+            <div className="px-3 py-6 text-center" data-testid="quick-paste-empty">
+              <div className="flex items-center justify-center gap-2 text-cp-accent mb-1">
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <span className="text-sm font-medium">Reading screen...</span>
+              </div>
+              <p className="text-xs text-cp-muted">Analyzing what to paste</p>
+            </div>
+          )}
+
+          {!searching && displayItems.length === 0 && predictions.length === 0 && items.length > 0 && null}
+
+          {!searching && displayItems.length === 0 && items.length === 0 && predictions.length === 0 && (
+            <div className="px-3 py-8 text-center text-sm text-cp-muted" data-testid="quick-paste-empty-real">
               {query ? "No results found" : "No clipboard history yet"}
             </div>
           )}

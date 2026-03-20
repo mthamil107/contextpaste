@@ -23,7 +23,19 @@ pub fn read_screen_context() -> ScreenContext {
         surrounding_text: None,
     };
 
-    // Strategy 1: Try OCR on screen region near cursor (works for terminals)
+    // Strategy 1: Read current line (select + copy + read + restore)
+    // Most accurate — gets the EXACT prompt text from any app
+    match read_current_line() {
+        Ok(text) if !text.is_empty() => {
+            log::info!("Line read captured: {}", text.chars().take(80).collect::<String>());
+            ctx.focused_text = Some(text);
+            return ctx;
+        }
+        Ok(_) => log::debug!("Line read returned empty"),
+        Err(e) => log::debug!("Line read failed: {}", e),
+    }
+
+    // Strategy 2: Try OCR on screen region near cursor (fallback)
     match read_screen_ocr() {
         Ok(text) if !text.is_empty() => {
             log::info!("OCR captured: {}", text.chars().take(80).collect::<String>());
@@ -34,7 +46,7 @@ pub fn read_screen_context() -> ScreenContext {
         Err(e) => log::debug!("OCR failed: {}", e),
     }
 
-    // Strategy 2: Try UIAutomation (works for standard input fields)
+    // Strategy 3: Try UIAutomation (works for standard input fields)
     match read_focused_element_text() {
         Ok((focused, _)) => {
             ctx.focused_text = focused;
@@ -45,6 +57,58 @@ pub fn read_screen_context() -> ScreenContext {
     }
 
     ctx
+}
+
+/// Read the current line by selecting it and copying.
+/// Simulates: Home → Shift+End → Ctrl+C → read clipboard → restore clipboard.
+/// This gets the EXACT text of the current prompt line in any app.
+#[cfg(target_os = "windows")]
+fn read_current_line() -> Result<String, String> {
+    let ps_script = r#"
+Add-Type -AssemblyName System.Windows.Forms
+
+# Save current clipboard
+$saved = [System.Windows.Forms.Clipboard]::GetText()
+
+# Small delay to ensure we're in the right window
+Start-Sleep -Milliseconds 50
+
+# Select current line: Home → Shift+End
+[System.Windows.Forms.SendKeys]::SendWait("{HOME}")
+Start-Sleep -Milliseconds 30
+[System.Windows.Forms.SendKeys]::SendWait("+{END}")
+Start-Sleep -Milliseconds 30
+
+# Copy selection
+[System.Windows.Forms.SendKeys]::SendWait("^c")
+Start-Sleep -Milliseconds 100
+
+# Read what was copied
+$line = [System.Windows.Forms.Clipboard]::GetText()
+
+# Restore original clipboard
+if ($saved) {
+    [System.Windows.Forms.Clipboard]::SetText($saved)
+} else {
+    [System.Windows.Forms.Clipboard]::Clear()
+}
+
+# Deselect: press End
+[System.Windows.Forms.SendKeys]::SendWait("{END}")
+
+Write-Output $line
+"#;
+
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-STA", "-Command", ps_script])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| format!("Line read failed: {}", e))?;
+
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok(text)
 }
 
 /// Use Windows built-in OCR to read text near the cursor position.

@@ -7,7 +7,7 @@ import { useClipboard } from "./hooks/useClipboard";
 import { useSettings } from "./hooks/useSettings";
 import { useUIStore } from "./stores/uiStore";
 import { useClipboardStore } from "./stores/clipboardStore";
-import type { ScreenContext } from "./lib/types";
+import type { RankedItem, ScreenContext } from "./lib/types";
 import { QuickPasteOverlay } from "./components/QuickPaste/QuickPasteOverlay";
 import { HistoryPanel } from "./components/History/HistoryPanel";
 import { SettingsPanel } from "./components/Settings/SettingsPanel";
@@ -101,12 +101,21 @@ function App() {
   const { hideOverlay } = useUIStore();
   const { fetchContextPredictions } = useClipboardStore();
   useEffect(() => {
+    // Ctrl+Shift+V → instant overlay (no OCR)
     const unlistenQuickPaste = listen("shortcut:quick-paste", () => {
       fetchPredictions(8);
       showOverlay();
       setView("quick-paste");
     });
-    // When OCR screen reading completes, re-rank items based on what the screen shows
+
+    // Ctrl+Shift+B → smart paste (show "reading screen..." then OCR-ranked items)
+    const unlistenSmartPaste = listen("shortcut:smart-paste", () => {
+      showOverlay();
+      setView("quick-paste");
+      // Don't fetch predictions yet — wait for OCR
+    });
+
+    // When OCR completes, re-rank with screen context
     const unlistenScreenContext = listen<ScreenContext>("screen-context-ready", (event) => {
       const ctx = event.payload;
       const screenText = ctx.focusedText || ctx.windowTitle || "";
@@ -114,6 +123,7 @@ function App() {
         fetchContextPredictions(screenText, 8);
       }
     });
+
     const unlistenHistoryShortcut = listen("shortcut:history", () => {
       setView("history");
     });
@@ -123,13 +133,25 @@ function App() {
     const unlistenHistory = listen("nav:history", () => setView("history"));
     const unlistenSettings = listen("nav:settings", () => setView("settings"));
 
+    // Listen for region OCR results (from Ctrl+Shift+B region selector)
+    const unlistenRegionOcr = listen<{ text: string; predictions: RankedItem[] }>("region-ocr-results", (event) => {
+      const { predictions } = event.payload;
+      if (predictions.length > 0) {
+        useClipboardStore.getState().setPredictions(predictions);
+        showOverlay();
+        setView("quick-paste");
+      }
+    });
+
     return () => {
       unlistenQuickPaste.then((fn) => fn());
+      unlistenSmartPaste.then((fn) => fn());
       unlistenScreenContext.then((fn) => fn());
       unlistenHistoryShortcut.then((fn) => fn());
       unlistenAutoHide.then((fn) => fn());
       unlistenHistory.then((fn) => fn());
       unlistenSettings.then((fn) => fn());
+      unlistenRegionOcr.then((fn) => fn());
     };
   }, [setView, showOverlay, hideOverlay]);
 

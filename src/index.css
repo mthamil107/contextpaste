@@ -49,3 +49,8 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--cp-muted);
 }
+
+/* Region selector overlay needs transparent background */
+body.region-selector-mode {
+  background: transparent !important;
+}

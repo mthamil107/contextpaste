@@ -29,6 +29,7 @@ interface ClipboardState {
   toggleStar: (id: string) => Promise<void>;
   pasteItem: (id: string) => Promise<void>;
   clearHistory: () => Promise<void>;
+  setPredictions: (predictions: RankedItem[]) => void;
 }
 
 export const useClipboardStore = create<ClipboardState>((set) => ({
@@ -131,4 +132,6 @@ export const useClipboardStore = create<ClipboardState>((set) => ({
       set({ error: String(e) });
     }
   },
+
+  setPredictions: (predictions: RankedItem[]) => set({ predictions }),
 }));

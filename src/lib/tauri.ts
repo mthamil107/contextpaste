@@ -172,6 +172,19 @@ export async function rateAutoPaste(eventId: string, correct: boolean): Promise<
 }
 
 // ============================================================
+// Region Capture Commands
+// ============================================================
+
+export async function captureAndOcrRegion(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): Promise<[string, RankedItem[]]> {
+  return invoke<[string, RankedItem[]]>("capture_and_ocr_region", { x, y, width, height });
+}
+
+// ============================================================
 // Event Listeners
 // ============================================================
 

@@ -5,6 +5,7 @@ mod ai;
 mod clipboard;
 mod commands;
 mod prediction;
+mod screenshot;
 mod storage;
 mod tray;
 mod utils;
@@ -74,6 +75,8 @@ pub fn run() {
             commands::ai::test_ai_connection,
             commands::ai::get_ai_status,
             commands::ai::backfill_embeddings,
+            // Screenshot + OCR commands
+            commands::screenshot::capture_and_ocr_region,
         ])
         .setup(|app| {
             // Initialize database
@@ -97,37 +100,60 @@ pub fn run() {
 
             // Register global shortcuts
             let handle = app.handle();
-            let shortcut_db = db.clone();
+
+            // Ctrl+Shift+V → INSTANT overlay (frequency + sequence, no OCR)
             handle
                 .global_shortcut()
-                .on_shortcut("ctrl+shift+v", move |app, _shortcut, event| {
+                .on_shortcut("ctrl+shift+v", |app, _shortcut, event| {
                     if event.state == ShortcutState::Pressed {
-                        // Step 1: Show overlay INSTANTLY
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
                         let _ = app.emit("shortcut:quick-paste", ());
-
-                        // Step 2: In background, OCR the screen near cursor
-                        // When done, re-rank items and update the overlay
-                        let bg_app = app.clone();
-                        let bg_db = shortcut_db.clone();
-                        std::thread::spawn(move || {
-                            let screen = prediction::context_reader::read_screen_context();
-                            log::info!("Screen OCR: app={:?}, focused={:?}",
-                                screen.app_name,
-                                screen.focused_text.as_deref().map(|s| &s[..s.len().min(80)]));
-
-                            // Emit screen context so frontend can re-rank with this info
-                            let _ = bg_app.emit("screen-context-ready", &screen);
-                        });
                     }
                 })
                 .map_err(|e| {
                     Box::new(std::io::Error::new(
                         std::io::ErrorKind::Other,
                         format!("Failed to register Ctrl+Shift+V shortcut: {}", e),
+                    ))
+                })?;
+
+            // Ctrl+Shift+B → SMART paste (region selector overlay for OCR)
+            handle
+                .global_shortcut()
+                .on_shortcut("ctrl+shift+b", |app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        // Create or show the region selector overlay window
+                        let existing = app.get_webview_window("region-selector");
+                        if let Some(win) = existing {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        } else {
+                            match tauri::WebviewWindowBuilder::new(
+                                app,
+                                "region-selector",
+                                tauri::WebviewUrl::App("index.html?mode=region-selector".into()),
+                            )
+                            .title("")
+                            .fullscreen(true)
+                            .transparent(true)
+                            .decorations(false)
+                            .always_on_top(true)
+                            .skip_taskbar(true)
+                            .build()
+                            {
+                                Ok(_) => log::info!("Region selector window created"),
+                                Err(e) => log::error!("Failed to create region selector: {}", e),
+                            }
+                        }
+                    }
+                })
+                .map_err(|e| {
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to register Ctrl+Shift+B shortcut: {}", e),
                     ))
                 })?;
 
