@@ -127,74 +127,107 @@ Search your clipboard history by meaning instead of exact text. Enable in **Sett
 - "the AWS key I copied this morning" instead of `AKIA...`
 - "docker command to restart services" instead of `docker compose restart`
 
-### Context-Aware Smart Paste (The Killer Feature)
+### Smart Paste — Lightshot-Style Region Selector (`Ctrl+Shift+B`)
 
-When you press `Ctrl+Shift+V`, ContextPaste uses **3 intelligence layers** to bring the right item to the top:
+The killer feature. Select any text on screen → OCR reads it → pastes the matching item.
 
-#### Layer 1: OCR Screen Reading
-Takes a screenshot near your cursor, runs Windows built-in OCR, and reads what the app is asking for:
-
-```
-Terminal shows: "GitHub Username:"     → OCR reads "Username"  → PlainText items ranked first
-Terminal shows: "Access Token:"        → OCR reads "Token"     → Credential items ranked first
-Terminal shows: "Docker Hub password:" → OCR reads "password"  → Credential items ranked first
-```
-
-**Real OCR captures from testing** (actual log output):
-```
-OCR: "Enter Docker Hub oas sword/ token :"  → matched Credential → score 377.9
-OCR: "GitHub Username: mthami1107"          → matched PlainText  → score 390.6
-OCR: "remote: Invalid username or token"    → matched PlainText  → score 390.6
-```
-
-The OCR runs in a **background thread** (~1 second) — the overlay shows instantly, then re-ranks items when OCR completes.
-
-#### Layer 2: Paste Sequence Tracking
-Learns the ORDER you paste things. If you always paste `mthamil107` then `ghp_token`, after pasting username the token automatically moves to position #1:
+**Like Lightshot, but for pasting instead of screenshots.**
 
 ```
-Paste #1: mthamil107 (Username)
-  → System records: "after mthamil107, user pasted ghp_token"
-
-Next Ctrl+Shift+V:
-  → System checks last paste was mthamil107
-  → Boosts ghp_token to top (+200 score)
-  → Token is at position #1, just press Enter
+┌─────────────────────────────────────────────────────────────┐
+│  Terminal                                          ░░░░░░░  │
+│                                                             │
+│  [1/4] Cloning source code...                               │
+│  ┌─────────────────────────────┐                            │
+│  │ GitHub Username:            │ ← You drag a box over this │
+│  └─────────────────────────────┘                            │
+│  GitHub Personal Access Token:                              │
+│                                                             │
+│  OCR reads: "GitHub Username"                               │
+│  → Matches keyword "username" → PlainText type              │
+│  → mthamil107 ranked #1 in overlay                          │
+│  → Press Enter to paste                                     │
+└─────────────────────────────────────────────────────────────┘
 ```
-
-This works for ANY repeating workflow — deploy scripts, form filling, configuration sequences.
-
-#### Layer 3: Frequency-Based Ranking
-Items you paste frequently rank higher than items you just copied once:
-
-```
-mthamil107  (11 pastes) → score: 66.0 (frequency)
-ghp_token   (3 pastes)  → score: 18.0 (frequency)
-random text (0 pastes)  → score: 0.0  (frequency)
-```
-
-Frequency weight is 60% of the base score — much stronger than recency (20%).
-
-#### Combined Scoring (all layers together)
-
-| Signal | Weight | Description |
-|--------|--------|-------------|
-| **Sequence boost** | +200 | "You always paste B after A" — strongest signal |
-| **OCR screen match** | +150 | Screen says "token" → boosts Credential items |
-| **Pinned items** | +100 | User-pinned items always near top |
-| **Content word match** | +80 | Screen text words found in item content |
-| **Paste frequency** | ×0.6 | Items pasted many times score higher |
-| **Recency** | ×0.2 | Newer items get a smaller boost |
-| **Starred items** | +10 | User-starred items get a small boost |
 
 #### How to Use
 
-1. **First time**: Just use `Ctrl+Shift+V` → arrow to select → `Enter` to paste
-2. **After a few uses**: Items you paste often will automatically rank higher
-3. **After pasting in sequence**: The next item in your workflow moves to #1
-4. **OCR context**: If the screen says "password" or "token", credentials rank first automatically
+1. **Press `Ctrl+Shift+B`** — screen dims with a dark overlay, crosshair cursor appears
+2. **Drag a box** around the text you want to match (e.g., "GitHub Username:")
+3. **Release mouse** — overlay hides, OCR reads JUST the selected region
+4. **Quick Paste overlay** appears with items ranked by what OCR found
+5. **Press Enter** to paste the top match, or arrow keys to select a different item
+6. **Press Escape** to cancel at any point
 
-No configuration needed — it learns from your behavior.
+#### Why This Works
+
+| Problem | Solution |
+|---------|----------|
+| Can't read terminal prompts via UI Automation | OCR reads pixels — works in ANY app |
+| Full-screen OCR is slow and captures wrong area | You select the exact region — small, fast, accurate |
+| Automatic OCR captures ContextPaste's own window | You trigger OCR before ContextPaste shows |
+| OCR on 600×100px area reads wrong text | You control exactly what area to read |
+
+#### Real-World Examples
+
+**Deploy script (terminal):**
+```
+"GitHub Username:"       → Ctrl+Shift+B → drag over it → mthamil107 at top → Enter
+"Access Token:"          → Ctrl+Shift+B → drag over it → ghp_token at top → Enter
+"Docker Hub password:"   → Ctrl+Shift+B → drag over it → credential at top → Enter
+```
+
+**Browser form:**
+```
+"Email address:"         → Ctrl+Shift+B → drag over label → email at top → Enter
+"API endpoint URL:"      → Ctrl+Shift+B → drag over label → URL at top → Enter
+```
+
+**Remote desktop / SSH:**
+```
+"Enter password:"        → Ctrl+Shift+B → drag over prompt → password at top → Enter
+```
+
+Works in: terminals, browsers, IDEs, remote desktop, SSH sessions, dialogs — anything on screen.
+
+#### OCR Keyword Matching
+
+The OCR text is matched against these keyword groups to determine what type of item to bring to the top:
+
+| Screen text contains | Boosts items of type |
+|---------------------|---------------------|
+| username, user, login, account | PlainText |
+| password, token, secret, api key | Credential |
+| url, link, endpoint, http | Url |
+| email, mail | Email |
+| ip, host, server, address | IpAddress |
+| json, payload, body | Json |
+| sql, query, select, database | Sql |
+| command, run, execute, shell | ShellCommand |
+| path, file, directory | FilePath |
+| connection, dsn, jdbc | ConnectionString |
+
+### Quick Paste — Instant Overlay (`Ctrl+Shift+V`)
+
+For fast pasting without screen reading. Items ranked by paste frequency and sequence:
+
+1. **Press `Ctrl+Shift+V`** — overlay appears instantly (no delay)
+2. **Items ranked by intelligence:**
+   - **Paste sequence** (+200 score) — after pasting A, item B (usually pasted next) is at top
+   - **Paste frequency** (×0.6 weight) — items pasted 5+ times always rank high
+   - **Recency** (×0.2 weight) — newer items get a smaller boost
+   - **Pinned items** (+100 score) — always near top
+3. **Arrow keys** to navigate, **Enter** to paste, **Tab** for ghost paste, **Escape** to close
+
+No configuration needed — it learns from your paste behavior automatically.
+
+### Three Keyboard Shortcuts
+
+| Shortcut | Mode | Speed | When to use |
+|----------|------|-------|-------------|
+| `Ctrl+Shift+V` | **Instant overlay** | Instant | Quick paste, you know what you want |
+| `Ctrl+Shift+B` | **Smart paste** (Lightshot-style) | ~1 sec | Screen has a prompt, you want the right match |
+| `Ctrl+Shift+H` | **History browser** | Instant | Search, filter, browse all history |
 
 #### Enable Auto-Paste (Optional)
 
@@ -237,7 +270,7 @@ Access via system tray > Settings, or click "Settings" in the nav bar:
 | Tab | What you can configure |
 |-----|----------------------|
 | **General** | Max history (default 5000), theme (system/light/dark), overlay position (cursor/center/top-right), overlay max items, dedup toggle, type badges, source context |
-| **Shortcuts** | View current hotkey bindings (Ctrl+Shift+V, Ctrl+Shift+H) |
+| **Shortcuts** | View current hotkey bindings (Ctrl+Shift+V, Ctrl+Shift+B, Ctrl+Shift+H) |
 | **Security** | Credential auto-expire duration (1-1440 min), clear expired credentials, clear all history |
 | **AI** | Enable/disable predictions, AI provider selection (local/OpenAI/Ollama), semantic search toggle |
 | **Auto-Paste** | Enable/disable auto-paste, confidence threshold slider (50-95%), toast notifications, paste rules manager |
@@ -430,11 +463,15 @@ score = pin_boost * 100           // Pinned items always on top
 
 ### Phase 4 — Context-Aware Smart Paste
 
-#### OCR Screen Reading
-- **Windows built-in OCR** — Captures a 600×100px screenshot near the cursor, runs `Windows.Media.Ocr` via PowerShell to extract text
-- **Works for terminals** — Unlike UI Automation, OCR reads actual pixel text from any app including PowerShell, cmd, Windows Terminal, SSH sessions
-- **Non-blocking** — OCR runs in a background thread (~1 second). Overlay shows instantly, then re-ranks when OCR completes
-- **Fallback chain** — OCR → UI Automation → window title
+#### Lightshot-Style Region Selector (`Ctrl+Shift+B`)
+- **Fullscreen transparent overlay** — Second Tauri WebView window, transparent, always-on-top, crosshair cursor
+- **Canvas-based drag selection** — 60fps smooth rendering with `requestAnimationFrame`, dark overlay with clear cutout
+- **User-controlled OCR region** — You drag exactly what area to read, no guessing
+- **Dimensions display** — Shows width × height of selection rectangle while dragging
+- **Small region = fast OCR** — A 200×30px region OCRs in <500ms via `Windows.Media.Ocr`
+- **Works in ALL apps** — Terminals, browsers, remote desktop, SSH, dialogs — anything with visible text
+- **Screenshot capture** — Uses PowerShell `System.Drawing.Graphics.CopyFromScreen` for the selected region only
+- **OCR pipeline** — Capture → temp PNG → `Windows.Media.Ocr` → text → keyword matching → ranked predictions
 - **Cross-platform stub** — Non-Windows platforms fall back to window title only
 
 #### Paste Sequence Tracking
@@ -486,12 +523,13 @@ score = pin_boost * 100           // Pinned items always on top
 
 | Action | Windows/Linux | macOS |
 |--------|--------------|-------|
-| Quick Paste | `Ctrl+Shift+V` | `Cmd+Shift+V` |
+| Quick Paste (instant) | `Ctrl+Shift+V` | `Cmd+Shift+V` |
+| Smart Paste (region select + OCR) | `Ctrl+Shift+B` | `Cmd+Shift+B` |
 | History Browser | `Ctrl+Shift+H` | `Cmd+Shift+H` |
 | Navigate items | `↑` `↓` | `↑` `↓` |
 | Paste selected | `Enter` | `Enter` |
 | Ghost paste | `Tab` | `Tab` |
-| Close overlay | `Escape` | `Escape` |
+| Close overlay / Cancel selection | `Escape` | `Escape` |
 | Search | Just start typing | Just start typing |
 
 ---
@@ -994,10 +1032,12 @@ TAURI SHELL (Rust)
 ├── Credential Detector (10 patterns + masking)
 ├── Prediction Engine (6-factor scoring)
 ├── Workflow Tracker (sliding window chain detection)
-├── Context-Aware Smart Paste
-│   ├── OCR Screen Reader (Windows.Media.Ocr, 600×100px near cursor)
-│   ├── Paste Sequence Tracker (learns paste order, +200 boost)
+├── Smart Paste (Ctrl+Shift+B)
+│   ├── Region Selector Overlay (transparent fullscreen, canvas drag)
+│   ├── Screenshot Capture (Win32 CopyFromScreen, user-selected region)
+│   ├── OCR Engine (Windows.Media.Ocr on captured region)
 │   ├── Context Re-Ranker (keyword→type matching, 10 keyword groups)
+│   ├── Paste Sequence Tracker (learns paste order, +200 boost)
 │   ├── Paste Rules Engine (regex-based rule matching)
 │   └── Learned Patterns (records WHERE+WHAT, auto-rule creation)
 ├── SQLite Store (WAL, FTS5, 3 schema migrations)
